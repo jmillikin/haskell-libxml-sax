@@ -19,13 +19,13 @@
 typedef struct _IncrementalParser IncrementalParser;
 
 IncrementalParser *
-incremental_parser_new ();
+hs_xml_sax_parser_new ();
 
 void
-incremental_parser_free (IncrementalParser *);
+hs_xml_sax_parser_free (IncrementalParser *);
 
 int
-incremental_parse (IncrementalParser *, const char *, int,
-                   startElementNsSAX2Func,
-                   endElementNsSAX2Func,
-                   charactersSAXFunc);
+hs_xml_sax_parse (IncrementalParser *, const char *, int,
+                  startElementNsSAX2Func,
+                  endElementNsSAX2Func,
+                  charactersSAXFunc);

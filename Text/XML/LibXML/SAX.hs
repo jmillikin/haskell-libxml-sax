@@ -25,7 +25,7 @@ module Text.XML.LibXML.SAX (
 	) where
 
 import Data.IORef (newIORef, readIORef, writeIORef, IORef)
-import Foreign.C (CInt, CString, withCStringLen, peekCString, peekCStringLen)
+import qualified Foreign.C as C
 import qualified Foreign as F
 import Control.Exception (bracket)
 
@@ -48,23 +48,23 @@ data QName = QName String String String
 
 newParser :: IO Parser
 newParser = do
-	ptr <- c_incremental_parser_new
-	autoptr <- F.newForeignPtr c_incremental_parser_free ptr
+	ptr <- c_parser_new
+	autoptr <- F.newForeignPtr c_parser_free ptr
 	return $ Parser autoptr
 
 incrementalParse :: Parser -> String -> IO [Event]
 incrementalParse (Parser autoptr) s = do
 	events <- newIORef []
 	
-	withCStringLen s $ \(cs, cs_len) -> do
+	C.withCStringLen s $ \(cs, cs_len) -> do
 	F.withForeignPtr autoptr $ \ptr -> do
 	withFunPtr (onBeginElement events) wrappedBegin $ \b -> do
 	withFunPtr (onEndElement events) wrappedEnd $ \e -> do
 	withFunPtr (onCharacters events) wrappedText $ \t -> do
-		retval <- (c_incremental_parse ptr cs (fromIntegral cs_len) b e t)
+		retval <- (c_parse ptr cs (fromIntegral cs_len) b e t)
 		(readIORef events) >>= (return . checkReturn retval)
 
-checkReturn :: CInt -> [Event] -> [Event]
+checkReturn :: C.CInt -> [Event] -> [Event]
 checkReturn r es = es ++ case r of
 	0 -> []
 	_ -> [ParseError (show r)]
@@ -73,9 +73,9 @@ withFunPtr :: a -> (a -> IO (F.FunPtr a)) -> (F.FunPtr a -> IO b) -> IO b
 withFunPtr f mkPtr block = bracket (mkPtr f) F.freeHaskellFunPtr block
 
 -- localname, prefix, namespace, value_begin, value_end
-data CAttribute = CAttribute CString CString CString CString CString
+data CAttribute = CAttribute C.CString C.CString C.CString C.CString C.CString
 
-splitCAttributes :: CInt -> F.Ptr CString -> IO [CAttribute]
+splitCAttributes :: C.CInt -> F.Ptr C.CString -> IO [CAttribute]
 splitCAttributes = splitCAttributes' 0
 
 splitCAttributes' _      0 _     = return []
@@ -90,44 +90,45 @@ splitCAttributes' offset n attrs = do
 
 convertCAttribute :: CAttribute -> IO Attribute
 convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
-	ln <- peekCString c_ln
+	ln <- C.peekCString c_ln
 	pfx <- peekNullable c_pfx
 	ns <- peekNullable c_ns
-	val <- peekCStringLen (c_vbegin, F.minusPtr c_vend c_vbegin)
+	val <- C.peekCStringLen (c_vbegin, F.minusPtr c_vend c_vbegin)
 	return (Attribute (QName ns pfx ln) val)
 
-peekNullable :: CString -> IO String
-peekNullable ptr
-	| ptr == F.nullPtr = return ""
-	| otherwise        = peekCString ptr
+peekNullable :: C.CString -> IO String
+peekNullable ptr = if ptr == F.nullPtr then return "" else C.peekCString ptr
 
-onBeginElement :: IORef [Event] -> F.Ptr () -> CString -> CString -> CString -> CInt -> F.Ptr () -> CInt -> CInt -> F.Ptr CString -> IO ()
+type StartElementNsSAX2Func = (F.Ptr () -> C.CString -> C.CString
+                               -> C.CString -> C.CInt -> F.Ptr () -> C.CInt
+                               -> C.CInt -> F.Ptr C.CString -> IO ())
+type EndElementNsSAX2Func = (F.Ptr () -> C.CString -> C.CString -> C.CString
+                             -> IO ())
+type CharactersSAXFunc = (F.Ptr () -> C.CString -> C.CInt -> IO ())
+
+onBeginElement :: IORef [Event] -> StartElementNsSAX2Func
 onBeginElement eventref _ cln cpfx cns _ _ n_attrs _ raw_attrs = do
 	ns <- peekNullable cns
 	pfx <- peekNullable cpfx
-	ln <- peekCString cln
+	ln <- C.peekCString cln
 	es <- readIORef eventref
 	c_attrs <- splitCAttributes n_attrs raw_attrs
 	attrs <- mapM convertCAttribute c_attrs
 	writeIORef eventref (es ++ [BeginElement (QName ns pfx ln) attrs])
 
-onEndElement :: IORef [Event] -> F.Ptr () -> CString -> CString -> CString -> IO ()
+onEndElement :: IORef [Event] -> EndElementNsSAX2Func
 onEndElement eventref _ cln cpfx cns = do
 	ns <- peekNullable cns
 	pfx <- peekNullable cpfx
-	ln <- peekCString cln
+	ln <- C.peekCString cln
 	es <- readIORef eventref
 	writeIORef eventref (es ++ [EndElement (QName ns pfx ln)])
 
-onCharacters :: IORef [Event] -> F.Ptr () -> CString -> CInt -> IO ()
+onCharacters :: IORef [Event] -> CharactersSAXFunc
 onCharacters eventref _ ctext ctextlen = do
-	text <- (peekCStringLen (ctext, fromIntegral ctextlen))
+	text <- (C.peekCStringLen (ctext, fromIntegral ctextlen))
 	es <- readIORef eventref
 	writeIORef eventref (es ++ [Characters text])
-
-type StartElementNsSAX2Func = (F.Ptr () -> CString -> CString -> CString -> CInt -> F.Ptr () -> CInt -> CInt -> F.Ptr CString -> IO ())
-type EndElementNsSAX2Func = (F.Ptr () -> CString -> CString -> CString -> IO ())
-type CharactersSAXFunc = (F.Ptr () -> CString -> CInt -> IO ())
 
 foreign import ccall "wrapper"
 	wrappedBegin :: StartElementNsSAX2Func -> IO (F.FunPtr StartElementNsSAX2Func)
@@ -138,16 +139,16 @@ foreign import ccall "wrapper"
 foreign import ccall "wrapper"
 	wrappedText :: CharactersSAXFunc -> IO (F.FunPtr CharactersSAXFunc)
 
-foreign import ccall "incremental-xml.h incremental_parser_new"
-	c_incremental_parser_new :: IO (F.Ptr ParserStruct)
+foreign import ccall "incremental-xml.h hs_xml_sax_parser_new"
+	c_parser_new :: IO (F.Ptr ParserStruct)
 
-foreign import ccall "incremental-xml.h incremental_parse"
-	c_incremental_parse :: F.Ptr ParserStruct -> CString -> CInt
-	                    -> F.FunPtr StartElementNsSAX2Func
-	                    -> F.FunPtr EndElementNsSAX2Func
-	                    -> F.FunPtr CharactersSAXFunc
-	                    -> IO CInt
+foreign import ccall "incremental-xml.h hs_xml_sax_parse"
+	c_parse :: F.Ptr ParserStruct -> C.CString -> C.CInt
+	           -> F.FunPtr StartElementNsSAX2Func
+	           -> F.FunPtr EndElementNsSAX2Func
+	           -> F.FunPtr CharactersSAXFunc
+	           -> IO C.CInt
 
-foreign import ccall "incremental-xml.h &incremental_parser_free"
-	c_incremental_parser_free :: F.FunPtr (F.Ptr ParserStruct -> IO ())
+foreign import ccall "incremental-xml.h &hs_xml_sax_parser_free"
+	c_parser_free :: F.FunPtr (F.Ptr ParserStruct -> IO ())
 

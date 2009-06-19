@@ -25,7 +25,7 @@ struct _IncrementalParser
 };
 
 IncrementalParser *
-incremental_parser_new ()
+hs_xml_sax_parser_new ()
 {
 	IncrementalParser *parser;
 	parser = malloc (sizeof (IncrementalParser));
@@ -42,7 +42,7 @@ incremental_parser_new ()
 }
 
 void
-incremental_parser_free (IncrementalParser *p)
+hs_xml_sax_parser_free (IncrementalParser *p)
 {
 	xmlClearParserCtxt (p->context);
 	xmlFreeParserCtxt (p->context);
@@ -50,7 +50,7 @@ incremental_parser_free (IncrementalParser *p)
 }
 
 int
-incremental_parse (
+hs_xml_sax_parse (
 	IncrementalParser *parser,
 	const char *text,
 	int text_len,
