@@ -13,10 +13,10 @@ Category: XML
 
 Library
   Build-Depends: base >=3 && < 5
+  build-tools: c2hs
   Exposed-modules: Text.XML.LibXML.SAX
 
   extra-libraries: xml2
   pkgconfig-depends: libxml-2.0
-  c-sources: incremental-xml.c
 
   Extensions: ForeignFunctionInterface

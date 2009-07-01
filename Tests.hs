@@ -26,63 +26,63 @@ textTests = "textTests" ~: TestList [testText]
 incrementalTests = "incrementalTests" ~: TestList [incrBegin, incrEnd, incrText]
 
 testBegin = TestCase $ do
-	parser <- newParser
-	[event] <- incrementalParse parser "<test>"
+	parser <- mkParser
+	[event] <- parse parser "<test>" False
 	BeginElement (QName "" "" "test") [] @=? event
 
 testBeginNS = TestCase $ do
-	parser <- newParser
-	[event] <- incrementalParse parser "<test xmlns='urn:test'>" 
+	parser <- mkParser
+	[event] <- parse parser "<test xmlns='urn:test'>" False
 	BeginElement (QName "urn:test" "" "test") [] @=? event
 
 testBeginPrefix = TestCase $ do
-	parser <- newParser
-	[event] <- incrementalParse parser "<t:test xmlns:t='urn:test'>" 
+	parser <- mkParser
+	[event] <- parse parser "<t:test xmlns:t='urn:test'>" False
 	BeginElement (QName "urn:test" "t" "test") [] @=? event
 
 testEnd = TestCase $ do
-	parser <- newParser
-	[_, event] <- incrementalParse parser "<test/>"
+	parser <- mkParser
+	[_, event] <- parse parser "<test/>" False
 	EndElement (QName "" "" "test") @=? event
 
 testEndNS = TestCase $ do
-	parser <- newParser
-	[_, event] <- incrementalParse parser "<test xmlns='urn:test'/>"
+	parser <- mkParser
+	[_, event] <- parse parser "<test xmlns='urn:test'/>" False
 	EndElement (QName "urn:test" "" "test") @=? event
 
 testEndPrefix = TestCase $ do
-	parser <- newParser
-	[_, event] <- incrementalParse parser "<t:test xmlns:t='urn:test'/>"
+	parser <- mkParser
+	[_, event] <- parse parser "<t:test xmlns:t='urn:test'/>" False
 	EndElement (QName "urn:test" "t" "test") @=? event
 
 testText = TestCase $ do
-	parser <- newParser
-	[_, event, _] <- incrementalParse parser "<test>text here</test>"
+	parser <- mkParser
+	[_, event, _] <- parse parser "<test>text here</test>" False
 	Characters "text here" @=? event
 
 incrBegin = TestCase $ do
-	parser <- newParser
-	let parse = incrementalParse parser
+	parser <- mkParser
+	let parse' = parse parser
 	
-	[] <- parse "<test"
-	[event] <- parse ">"
+	[] <- parse' "<test" False
+	[event] <- parse' ">" False
 	BeginElement (QName "" "" "test") [] @=? event
 
 incrEnd = TestCase $ do
-	parser <- newParser
-	let parse = incrementalParse parser
+	parser <- mkParser
+	let parse' = parse parser
 	
-	[_] <- parse "<test></test"
-	[event] <- parse ">"
+	[_] <- parse' "<test></test" False
+	[event] <- parse' ">" False
 	EndElement (QName "" "" "test") @=? event
 
 incrText = TestCase $ do
-	parser <- newParser
-	let parse = incrementalParse parser
+	parser <- mkParser
+	let parse' = parse parser
 	
-	[_] <- parse "<test>text"
-	[] <- parse " more text"
-	[event, _] <- parse "</test>"
+	[_] <- parse' "<test>text" False
+	[] <- parse' " more text" False
+	[event, _] <- parse' "</test>" False
 	Characters "text more text" @=? event
 
 main = do
