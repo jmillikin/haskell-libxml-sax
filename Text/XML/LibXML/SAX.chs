@@ -81,8 +81,9 @@ parse (Parser fptr) s final = do
 	let cFinal = if final then 1 else 0
 	
 	rc <- {#call xmlParseChunk #} ctxt cs (fromIntegral cs_len) cFinal
+	errors <- checkErrors rc ctxt
 	events <- readIORef eventRef
-	return $ events ++ (checkReturn rc)
+	return $ events ++ errors
 	
 withHandlers :: Ptr Context -> (IORef [Event] -> IO a) -> IO a
 withHandlers ctxt block = do
@@ -121,9 +122,12 @@ freeContextHandlers ctxt handlers = do
 withFunPtr :: a -> (a -> IO (FunPtr a)) -> (FunPtr a -> IO b) -> IO b
 withFunPtr f mkPtr block = bracket (mkPtr f) freeHaskellFunPtr block
 
-checkReturn :: CInt -> [Event]
-checkReturn rc = if rc == 0 then [] else [ParseError (show rc)]
--- TODO: show full error message
+checkErrors :: CInt -> Ptr Context -> IO [Event]
+checkErrors 0 _ = return []
+checkErrors rc ctxt = do
+	errInfo <- {#call xmlCtxtGetLastError #} (castPtr ctxt)
+	message <- peekCString =<< {#get xmlError->message #} errInfo
+	return [ParseError message]
 
 -- localname, prefix, namespace, value_begin, value_end
 data CAttribute = CAttribute CString CString CString CString CString

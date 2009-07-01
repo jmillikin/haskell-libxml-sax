@@ -23,7 +23,7 @@ allTests = "allTests" ~: TestList [beginTests, endTests, textTests, otherTests, 
 beginTests = "beginTests" ~: TestList [testBegin, testBeginNS, testBeginPrefix]
 endTests = "endTests" ~: TestList [testEnd, testEndNS, testEndPrefix]
 textTests = "textTests" ~: TestList [testText, testPredefinedEntity, testNumericEntity]
-otherTests = "otherTests" ~: TestList [testProcessingInstruction, testComment, testCDATA]
+otherTests = "otherTests" ~: TestList [testProcessingInstruction, testComment, testCDATA, testError]
 incrementalTests = "incrementalTests" ~: TestList [incrBegin, incrEnd, incrText]
 
 testBegin = TestCase $ do
@@ -88,6 +88,11 @@ testCDATA = TestCase $ do
 	events <- parse parser "<test><![CDATA[<test2/>]]></test>" True
 	let events' = init . tail $ events
 	[Characters "<test2/>"] @=? events'
+
+testError = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "</a>" True
+	[ParseError "StartTag: invalid element name\n"] @=? events
 
 incrBegin = TestCase $ do
 	parser <- mkParser
