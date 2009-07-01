@@ -36,6 +36,8 @@ data Event =
 	  BeginElement QName [Attribute]
 	| EndElement QName
 	| Characters String
+	| Comment String
+	| ProcessingInstruction String String -- Target, Data
 	| ParseError String
 	deriving (Show, Eq)
 
@@ -88,6 +90,8 @@ withHandlers ctxt block = do
 	withFunPtr (onBeginElement eventRef) wrappedBegin $ \b -> do
 	withFunPtr (onEndElement eventRef) wrappedEnd $ \e -> do
 	withFunPtr (onCharacters eventRef) wrappedText $ \t -> do
+	withFunPtr (onComment eventRef) wrappedComment $ \c -> do
+	withFunPtr (onProcessingInstruction eventRef) wrappedProcessingInstruction $ \pi -> do
 	
 	bracket
 		(setContextHandlers ctxt)
@@ -97,6 +101,8 @@ withHandlers ctxt block = do
 		{#set xmlSAXHandler->startElementNs #} handlers b
 		{#set xmlSAXHandler->endElementNs #} handlers e
 		{#set xmlSAXHandler->characters #} handlers t
+		{#set xmlSAXHandler->comment #} handlers c
+		{#set xmlSAXHandler->processingInstruction #} handlers pi
 		
 		block eventRef
 		
@@ -155,6 +161,10 @@ type EndElementNsSAX2Func = (Ptr () -> CUString -> CUString -> CUString
                              -> IO ())
 type CharactersSAXFunc = (Ptr () -> CUString -> CInt -> IO ())
 
+type CommentSAXFunc = Ptr () -> CUString -> IO ()
+
+type ProcessingInstructionSAXFunc = Ptr () -> CUString -> CUString -> IO ()
+
 onBeginElement :: IORef [Event] -> StartElementNsSAX2Func
 onBeginElement eventref _ cln cpfx cns _ _ n_attrs _ raw_attrs = do
 	ns <- peekNullable $ castPtr cns
@@ -175,9 +185,22 @@ onEndElement eventref _ cln cpfx cns = do
 
 onCharacters :: IORef [Event] -> CharactersSAXFunc
 onCharacters eventref _ ctext ctextlen = do
-	text <- (peekCStringLen (castPtr ctext, fromIntegral ctextlen))
+	text <- peekCStringLen (castPtr ctext, fromIntegral ctextlen)
 	es <- readIORef eventref
 	writeIORef eventref (es ++ [Characters text])
+
+onComment :: IORef [Event] -> CommentSAXFunc
+onComment eventRef _ ctext = do
+	text <- peekCString (castPtr ctext)
+	es <- readIORef eventRef
+	writeIORef eventRef (es ++ [Comment text])
+
+onProcessingInstruction :: IORef [Event] -> ProcessingInstructionSAXFunc
+onProcessingInstruction eventRef _ ctarget cdata = do
+	target <- peekCString (castPtr ctarget)
+	data' <- peekCString (castPtr cdata)
+	es <- readIORef eventRef
+	writeIORef eventRef (es ++ [ProcessingInstruction target data'])
 
 foreign import ccall "wrapper"
 	wrappedBegin :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
@@ -187,6 +210,12 @@ foreign import ccall "wrapper"
 
 foreign import ccall "wrapper"
 	wrappedText :: CharactersSAXFunc -> IO (FunPtr CharactersSAXFunc)
+
+foreign import ccall "wrapper"
+	wrappedComment :: CommentSAXFunc -> IO (FunPtr CommentSAXFunc)
+
+foreign import ccall "wrapper"
+	wrappedProcessingInstruction :: ProcessingInstructionSAXFunc -> IO (FunPtr ProcessingInstructionSAXFunc)
 
 -- XML_SAX2_MAGIC
 xmlSax2Magic = 0xDEEDBEAF :: CUInt

@@ -19,10 +19,11 @@ module Main () where
 import Test.HUnit
 import Text.XML.LibXML.SAX
 
-allTests = "allTests" ~: TestList [beginTests, endTests, textTests, incrementalTests]
+allTests = "allTests" ~: TestList [beginTests, endTests, textTests, otherTests, incrementalTests]
 beginTests = "beginTests" ~: TestList [testBegin, testBeginNS, testBeginPrefix]
 endTests = "endTests" ~: TestList [testEnd, testEndNS, testEndPrefix]
-textTests = "textTests" ~: TestList [testText]
+textTests = "textTests" ~: TestList [testText, testPredefinedEntity, testNumericEntity]
+otherTests = "otherTests" ~: TestList [testProcessingInstruction, testComment, testCDATA]
 incrementalTests = "incrementalTests" ~: TestList [incrBegin, incrEnd, incrText]
 
 testBegin = TestCase $ do
@@ -42,23 +43,51 @@ testBeginPrefix = TestCase $ do
 
 testEnd = TestCase $ do
 	parser <- mkParser
-	[_, event] <- parse parser "<test/>" False
+	[_, event] <- parse parser "<test/>" True
 	EndElement (QName "" "" "test") @=? event
 
 testEndNS = TestCase $ do
 	parser <- mkParser
-	[_, event] <- parse parser "<test xmlns='urn:test'/>" False
+	[_, event] <- parse parser "<test xmlns='urn:test'/>" True
 	EndElement (QName "urn:test" "" "test") @=? event
 
 testEndPrefix = TestCase $ do
 	parser <- mkParser
-	[_, event] <- parse parser "<t:test xmlns:t='urn:test'/>" False
+	[_, event] <- parse parser "<t:test xmlns:t='urn:test'/>" True
 	EndElement (QName "urn:test" "t" "test") @=? event
 
 testText = TestCase $ do
 	parser <- mkParser
-	[_, event, _] <- parse parser "<test>text here</test>" False
+	[_, event, _] <- parse parser "<test>text here</test>" True
 	Characters "text here" @=? event
+
+testPredefinedEntity = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "<test>text &amp; here</test>" True
+	let events' = init . tail $ events
+	[Characters "text ", Characters "&", Characters " here"] @=? events'
+
+testNumericEntity = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "<test>text &#x003C; here</test>" True
+	let events' = init . tail $ events
+	[Characters "text ", Characters "<", Characters " here"] @=? events'
+
+testProcessingInstruction = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "<?instr version='1.0'?><test/>" True
+	ProcessingInstruction "instr" "version='1.0'" @=? head events
+
+testComment = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "<!-- comment here --><test/>" True
+	Comment " comment here " @=? head events
+
+testCDATA = TestCase $ do
+	parser <- mkParser
+	events <- parse parser "<test><![CDATA[<test2/>]]></test>" True
+	let events' = init . tail $ events
+	[Characters "<test2/>"] @=? events'
 
 incrBegin = TestCase $ do
 	parser <- mkParser
@@ -73,7 +102,7 @@ incrEnd = TestCase $ do
 	let parse' = parse parser
 	
 	[_] <- parse' "<test></test" False
-	[event] <- parse' ">" False
+	[event] <- parse' ">" True
 	EndElement (QName "" "" "test") @=? event
 
 incrText = TestCase $ do
@@ -82,7 +111,7 @@ incrText = TestCase $ do
 	
 	[_] <- parse' "<test>text" False
 	[] <- parse' " more text" False
-	[event, _] <- parse' "</test>" False
+	[event, _] <- parse' "</test>" True
 	Characters "text more text" @=? event
 
 main = do
