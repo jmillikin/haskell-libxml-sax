@@ -83,7 +83,7 @@ parse (Parser fptr) s final = do
 	rc <- {#call xmlParseChunk #} ctxt cs (fromIntegral cs_len) cFinal
 	errors <- checkErrors rc ctxt
 	events <- readIORef eventRef
-	return $ events ++ errors
+	return $ reverse events ++ errors
 	
 withHandlers :: Ptr Context -> (IORef [Event] -> IO a) -> IO a
 withHandlers ctxt block = do
@@ -177,7 +177,7 @@ onBeginElement eventref _ cln cpfx cns _ _ n_attrs _ raw_attrs = do
 	es <- readIORef eventref
 	c_attrs <- splitCAttributes n_attrs (castPtr raw_attrs)
 	attrs <- mapM convertCAttribute c_attrs
-	writeIORef eventref (es ++ [BeginElement (QName ns pfx ln) attrs])
+	writeIORef eventref ((BeginElement (QName ns pfx ln) attrs):es)
 
 onEndElement :: IORef [Event] -> EndElementNsSAX2Func
 onEndElement eventref _ cln cpfx cns = do
@@ -185,26 +185,26 @@ onEndElement eventref _ cln cpfx cns = do
 	pfx <- peekNullable $ castPtr cpfx
 	ln <- peekCString $ castPtr cln
 	es <- readIORef eventref
-	writeIORef eventref (es ++ [EndElement (QName ns pfx ln)])
+	writeIORef eventref ((EndElement (QName ns pfx ln)):es)
 
 onCharacters :: IORef [Event] -> CharactersSAXFunc
 onCharacters eventref _ ctext ctextlen = do
 	text <- peekCStringLen (castPtr ctext, fromIntegral ctextlen)
 	es <- readIORef eventref
-	writeIORef eventref (es ++ [Characters text])
+	writeIORef eventref ((Characters text):es)
 
 onComment :: IORef [Event] -> CommentSAXFunc
 onComment eventRef _ ctext = do
 	text <- peekCString (castPtr ctext)
 	es <- readIORef eventRef
-	writeIORef eventRef (es ++ [Comment text])
+	writeIORef eventRef ((Comment text):es)
 
 onProcessingInstruction :: IORef [Event] -> ProcessingInstructionSAXFunc
 onProcessingInstruction eventRef _ ctarget cdata = do
 	target <- peekCString (castPtr ctarget)
 	data' <- peekCString (castPtr cdata)
 	es <- readIORef eventRef
-	writeIORef eventRef (es ++ [ProcessingInstruction target data'])
+	writeIORef eventRef ((ProcessingInstruction target data'):es)
 
 foreign import ccall "wrapper"
 	wrappedBegin :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
