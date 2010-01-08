@@ -1,5 +1,5 @@
 Name: libxml-sax
-Version: 0.3
+Version: 0.4
 Stability: Alpha
 Synopsis: Bindings for the libXML2 SAX interface
 Description: Incrementally convert text to lists of XML events
