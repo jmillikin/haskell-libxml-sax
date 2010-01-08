@@ -18,13 +18,13 @@
 
 #include <libxml/parser.h>
 
-module Text.XML.LibXML.SAX (
-	 Parser
-	,Event(..)
-	,Attribute(..)
-	,QName(..)
-	,mkParser
-	,parse
+module Text.XML.LibXML.SAX
+	( Parser
+	, Event(..)
+	, Attribute(..)
+	, QName(..)
+	, mkParser
+	, parse
 	) where
 
 import Data.IORef (newIORef, readIORef, writeIORef, IORef)
@@ -37,18 +37,26 @@ data Event =
 	| EndElement QName
 	| Characters String
 	| Comment String
-	| ProcessingInstruction String String -- Target, Data
+	| ProcessingInstruction String String -- ^ Target, Data
 	| ParseError String
 	deriving (Show, Eq)
 
-data Attribute = Attribute QName String
+data Attribute = Attribute
+	{ attributeName  :: QName
+	, attributeValue :: String
+	}
 	deriving (Show, Eq)
 
--- Namespace, prefix, local name
-data QName = QName String String String
+data QName = QName
+	{ qnameNamespace :: String
+	, qnamePrefix    :: String
+	, qnameLocalName :: String
+	}
 	deriving (Show, Eq)
 
-data Parser = Parser (ForeignPtr Context)
+-- | An opaque reference to a libXML SAX parser.
+-- 
+newtype Parser = Parser (ForeignPtr Context)
 
 data Context = Context
 data SAXHandler = SAXHandler
@@ -63,6 +71,8 @@ instance Storable SAXHandler where
 {#pointer *xmlSAXHandler as SAXHandlerPtr -> SAXHandler #}
 {#pointer *_xmlSAXHandler as SAXHandlerPtr nocode #}
 
+-- | Construct a new, empty parser.
+-- 
 mkParser :: IO Parser
 mkParser = let n = nullPtr in do
 	context <- {#call xmlCreatePushParserCtxt #} n n n 0 n
@@ -72,6 +82,13 @@ mkParser = let n = nullPtr in do
 foreign import ccall "libxml/parser.h &xmlFreeParserCtxt"
 	xmlFreeParserCtxt :: FunPtr (Ptr Context -> IO ())
 
+-- | Feed some text into the parser. This may be performed multiple times
+-- per 'Parser' value, in which case the internal parser state is retained
+-- between computations.
+-- 
+-- If the third parameter is 'True', the parser assumes that this is the
+-- last input and checks that the document was closed correctly.
+-- 
 parse :: Parser -> String -> Bool -> IO [Event]
 parse (Parser fptr) s final = do
 	withCStringLen s $ \(cs, cs_len) -> do
