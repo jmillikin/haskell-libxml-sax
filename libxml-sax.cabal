@@ -7,9 +7,14 @@ License: GPL
 License-file: License.txt
 Author: John Millikin
 maintainer: jmillikin@gmail.com
+copyright: Copyright (c) John Millikin 2009-2010,
+                     (c) Dmitry Astapov 2010
 Build-Type: Simple
 Cabal-Version: >=1.2
 Category: XML
+homepage: http://ianen.org/haskell/bindings/libxml-sax/
+tested-with: GHC==6.10.4
+extra-source-files: Tests.hs
 
 Library
   Build-Depends: base >=3 && < 5
