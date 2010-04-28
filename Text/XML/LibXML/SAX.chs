@@ -24,6 +24,7 @@ module Text.XML.LibXML.SAX
 	, Error (..)
 	, newParser
 	, parse
+	, eventsToElement
 	) where
 
 import Control.Monad (foldM)
@@ -233,6 +234,49 @@ onProcessingInstruction eventRef _ ctarget cdata = do
 	es <- readIORef eventRef
 	let instruction = X.Instruction target value
 	writeIORef eventRef ((ProcessingInstruction instruction):es)
+
+-- | Convert a list of events to a single 'X.Element'. If the events do not
+-- contain at least one valid element, 'Nothing' will be returned instead.
+eventsToElement :: [Event] -> Maybe X.Element
+eventsToElement es = case eventsToNodes es >>= isElement of
+	(e:_) -> Just e
+	_ -> Nothing
+
+isElement :: X.Node -> [X.Element]
+isElement (X.NodeElement e) = [e]
+isElement _ = []
+
+eventsToNodes :: [Event] -> [X.Node]
+eventsToNodes = concatMap blockToNodes . splitBlocks
+
+-- Split event list into a sequence of "blocks", which are the events including
+-- and between a pair of tags. <start><start2/></start> and <start/> are both
+-- single blocks.
+splitBlocks :: [Event] -> [[Event]]
+splitBlocks es = ret where
+	(_, _, ret) = foldl splitBlocks' (0, [], []) es
+	
+	splitBlocks' (depth, accum, allAccum) e = split where
+		split = if depth' == 0
+			then (depth', [], allAccum ++ [accum'])
+			else (depth', accum', allAccum)
+		accum' = accum ++ [e]
+		depth' :: Integer
+		depth' = depth + case e of
+			(BeginElement _ _) -> 1
+			(EndElement _) -> (- 1)
+			_ -> 0
+
+blockToNodes :: [Event] -> [X.Node]
+blockToNodes [] = []
+blockToNodes (begin:rest) = nodes where
+	end = last rest
+	nodes = case (begin, end) of
+		(BeginElement name' attrs, EndElement _) -> [node name' attrs]
+		(Characters t, _) -> [X.NodeText t]
+		_ -> []
+	
+	node n as = X.NodeElement $ X.Element n as $ eventsToNodes $ init rest
 
 foreign import ccall "wrapper"
 	wrappedBegin :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
