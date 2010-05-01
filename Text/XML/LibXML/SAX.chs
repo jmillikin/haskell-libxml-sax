@@ -238,13 +238,9 @@ onProcessingInstruction eventRef _ ctarget cdata = do
 -- | Convert a list of events to a single 'X.Element'. If the events do not
 -- contain at least one valid element, 'Nothing' will be returned instead.
 eventsToElement :: [Event] -> Maybe X.Element
-eventsToElement es = case eventsToNodes es >>= isElement of
+eventsToElement es = case eventsToNodes es >>= X.isElement of
 	(e:_) -> Just e
 	_ -> Nothing
-
-isElement :: X.Node -> [X.Element]
-isElement (X.NodeElement e) = [e]
-isElement _ = []
 
 eventsToNodes :: [Event] -> [X.Node]
 eventsToNodes = concatMap blockToNodes . splitBlocks
