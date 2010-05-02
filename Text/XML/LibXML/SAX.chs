@@ -172,7 +172,7 @@ convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
 	pfx <- maybePeek peekUTF8 c_pfx
 	ns <- maybePeek peekUTF8 c_ns
 	val <- peekUTF8Len (c_vbegin, minusPtr c_vend c_vbegin)
-	return (X.Attribute (X.Name ln ns pfx) val)
+	return (X.Attribute (X.Name ln ns pfx) [X.ContentText val])
 
 peekUTF8 :: CString -> IO T.Text
 peekUTF8 cstr = do
@@ -269,7 +269,7 @@ blockToNodes (begin:rest) = nodes where
 	end = last rest
 	nodes = case (begin, end) of
 		(BeginElement name' attrs, EndElement _) -> [node name' attrs]
-		(Characters t, _) -> [X.NodeText t]
+		(Characters t, _) -> [X.NodeContent (X.ContentText t)]
 		_ -> []
 	
 	node n as = X.NodeElement $ X.Element n as $ eventsToNodes $ init rest
