@@ -2,16 +2,15 @@ Name: libxml-sax
 Version: 0.4
 stability: experimental
 Synopsis: Bindings for the libXML2 SAX interface
-License: GPL-3
-License-file: License.txt
+License: MIT
+License-file: license.txt
 Author: John Millikin
 maintainer: jmillikin@gmail.com
 copyright: John Millikin 2009-2010, Dmitry Astapov 2010
 Build-Type: Simple
 Cabal-Version: >=1.6
 Category: Text, XML, Parsing
-tested-with: GHC==6.10.4
-extra-source-files: Tests.hs
+tested-with: GHC==6.10.4, GHC==6.12.1
 
 source-repository head
   type: darcs
