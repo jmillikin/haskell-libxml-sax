@@ -1,88 +1,96 @@
--- Copyright (c) 2009-2010 John Millikin
--- Copyright (c) 2010 Dmitry Astapov
--- 
--- Permission is hereby granted, free of charge, to any person
--- obtaining a copy of this software and associated documentation
--- files (the "Software"), to deal in the Software without
--- restriction, including without limitation the rights to use,
--- copy, modify, merge, publish, distribute, sublicense, and/or sell
--- copies of the Software, and to permit persons to whom the
--- Software is furnished to do so, subject to the following
--- conditions:
--- 
--- The above copyright notice and this permission notice shall be
--- included in all copies or substantial portions of the Software.
--- 
--- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
--- EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
--- OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
--- NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
--- HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
--- WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
--- FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
--- OTHER DEALINGS IN THE SOFTWARE.
-
+-----------------------------------------------------------------------------
+-- |
+-- Module: Text.XML.LibXML.SAX
+-- Copyright: 2010 John Millikin
+-- License: MIT
+--
+-- Maintainer: jmillikin@gmail.com
+-- Portability: portable
+--
+-- Bindings for the libXML2 SAX interface
+--
+-----------------------------------------------------------------------------
 {-# LANGUAGE ForeignFunctionInterface #-}
 
 #include <libxml/parser.h>
+#include <string.h>
 
 module Text.XML.LibXML.SAX
 	( Parser
-	, Event (..)
-	, Error (..)
+	, ParserCallbacks (..)
 	, newParser
 	, parse
-	, eventsToElement
+	, parseComplete
 	) where
-
-import Control.Monad (foldM)
+import qualified Control.Exception as E
+import qualified Control.Monad.ST as ST
+import qualified Data.STRef as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as B
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text.Lazy as T
 import qualified Data.Text.Lazy.Encoding as TE
-import qualified Data.FailableList as FL
 import qualified Data.XML.Types as X
-import Data.IORef (newIORef, readIORef, writeIORef, IORef)
 import Foreign
 import Foreign.C
-import Control.Exception (bracket)
+import qualified Foreign.Concurrent as FC
 
-data Event =
-	  BeginElement X.Name [X.Attribute]
-	| EndElement X.Name
-	| Characters T.Text
-	| Comment T.Text
-	| ProcessingInstruction X.Instruction
-	deriving (Show, Eq)
+data ParserCallbacks s = ParserCallbacks
+	{ parsedBeginElement :: X.Name -> [X.Attribute] -> ST.ST s ()
+	, parsedEndElement :: X.Name -> ST.ST s ()
+	, parsedCharacters :: T.Text -> ST.ST s ()
+	, parsedComment :: T.Text -> ST.ST s ()
+	, parsedProcessingInstruction :: X.Instruction -> ST.ST s ()
+	}
 
-data Error = Error T.Text
-	deriving (Show, Eq)
+{# pointer *xmlParserCtxt as Context newtype #}
 
--- | An opaque reference to a libXML SAX parser.
--- 
-newtype Parser = Parser (ForeignPtr Context)
+data Parser s = Parser
+	{ parserContext :: ForeignPtr Context
+	, parserCallbackPtr :: ForeignPtr ()
+	, parserOnError :: T.Text -> ST.ST s ()
+	, parserErrorRef :: ST.STRef s (Maybe E.SomeException)
+	}
 
-data Context = Context
-data SAXHandler = SAXHandler
+newParser :: ParserCallbacks s
+          -> (T.Text -> ST.ST s ()) -- ^ An error handler, called if parsing fails
+          -> Maybe T.Text -- ^ An optional filename or URI
+          -> ST.ST s (Parser s)
+newParser callbacks onError filename = do
+	ref <- ST.newSTRef Nothing
+	ST.unsafeIOToST $ do
+		cCallbacks <- mallocForeignPtrBytes {# sizeof xmlSAXHandler #}
+		withForeignPtr cCallbacks $ \raw -> do
+			{# call memset #} raw 0 {# sizeof xmlSAXHandler #}
+			{#set xmlSAXHandler->initialized #} raw xmlSax2Magic
+			
+			wrappedBegin (onBeginElement ref (parsedBeginElement callbacks))
+				>>= {#set xmlSAXHandler->startElementNs #} raw
+			wrappedEnd (onEndElement ref (parsedEndElement callbacks))
+				>>= {#set xmlSAXHandler->endElementNs #} raw
+			wrappedText (onCharacters ref (parsedCharacters callbacks))
+				>>= {#set xmlSAXHandler->characters #} raw
+			wrappedComment (onComment ref (parsedComment callbacks))
+				>>= {#set xmlSAXHandler->comment #} raw
+			wrappedPI (onProcessingInstruction ref (parsedProcessingInstruction callbacks))
+				>>= {#set xmlSAXHandler->processingInstruction #} raw
+			
+			FC.addForeignPtrFinalizer cCallbacks $ freeParserCallbacks raw
+		
+		ctxFP <- withForeignPtr cCallbacks $ \sax ->
+			maybeWith withUTF8 filename $ \cFilename -> do
+				Context ctx <- {#call xmlCreatePushParserCtxt #} sax nullPtr nullPtr 0 cFilename
+				newForeignPtr xmlFreeParserCtxt ctx
+		
+		return $ Parser ctxFP cCallbacks onError ref
 
-instance Storable SAXHandler where
-	sizeOf _ = {#sizeof xmlSAXHandler #}
-	alignment _ = alignment (undefined :: FunPtr ())
-	peekByteOff = undefined
-	pokeByteOff _ _ _ = return ()
-
-{#pointer *xmlParserCtxt as ContextPtr -> Context #}
-{#pointer *xmlSAXHandler as SAXHandlerPtr -> SAXHandler #}
-{#pointer *_xmlSAXHandler as SAXHandlerPtr nocode #}
-
--- | Construct a new, empty parser.
--- 
-newParser :: IO Parser
-newParser = let n = nullPtr in do
-	context <- {#call xmlCreatePushParserCtxt #} n n n 0 n
-	autoptr <- newForeignPtr xmlFreeParserCtxt context
-	return $ Parser autoptr
+freeParserCallbacks :: Ptr () -> IO ()
+freeParserCallbacks raw = do
+	{# get xmlSAXHandler->startElementNs #} raw >>= freeHaskellFunPtr
+	{# get xmlSAXHandler->endElementNs #} raw >>= freeHaskellFunPtr
+	{# get xmlSAXHandler->characters #} raw >>= freeHaskellFunPtr
+	{# get xmlSAXHandler->comment #} raw >>= freeHaskellFunPtr
+	{# get xmlSAXHandler->processingInstruction #} raw >>= freeHaskellFunPtr
 
 foreign import ccall "libxml/parser.h &xmlFreeParserCtxt"
 	xmlFreeParserCtxt :: FunPtr (Ptr Context -> IO ())
@@ -91,87 +99,56 @@ foreign import ccall "libxml/parser.h &xmlFreeParserCtxt"
 -- per 'Parser' value, in which case the internal parser state is retained
 -- between computations.
 -- 
--- If the third parameter is 'True', the parser assumes that this is the
--- last input and checks that the document was closed correctly.
+parse :: Parser s -> B.ByteString -> ST.ST s ()
+parse p bytes = parse' p $ \h ->
+	B.unsafeUseAsCStringLen bytes $ \(cs, csLen) -> do
+	{# call xmlParseChunk #} h cs (fromIntegral csLen) 0
+
+-- | Finish parsing any buffered data, and check that the document was
+-- closed correctly.
 -- 
-parse :: Parser -> BL.ByteString -> Bool -> IO (FL.FailableList Error Event)
-parse (Parser fptr) lazyBytes final = io where
-	io =
-		withForeignPtr fptr $ \ctx ->
-		withHandlers ctx $ \ref -> do
-		chunkRC <- foldM (parseChunk ctx) Nothing $ BL.toChunks lazyBytes
-		rc <- case chunkRC of
-			Nothing -> if final
-				then {#call xmlParseChunk #} ctx nullPtr 0 1
-				else return 0
-			Just err -> return err
-		events <- convertEvents `fmap` readIORef ref
+parseComplete :: Parser s -> ST.ST s ()
+parseComplete p = parse' p $ \h ->
+	{#call xmlParseChunk #} h nullPtr 0 1
+
+withParser :: Parser s -> (Context -> IO a) -> ST.ST s a
+withParser p io = ST.unsafeIOToST $ withForeignPtr (parserContext p) $ io . Context
+
+parse' :: Parser s -> (Context -> IO CInt) -> ST.ST s ()
+parse' p io = do
+	let ref = parserErrorRef p
+	ST.writeSTRef ref Nothing
+	maybeErr <- withParser p $ \h -> do
+		rc <- E.block $ io h
+		touchForeignPtr $ parserCallbackPtr p
+		maybeError <- ST.unsafeSTToIO $ ST.readSTRef ref
+		case maybeError of
+			Just err -> E.throwIO err
+			Nothing -> return ()
 		case rc of
-			0 -> return events
+			0 -> return Nothing
 			_ -> do
-				errInfo <- {#call xmlCtxtGetLastError #} (castPtr ctx)
-				message <- peekCString =<< {#get xmlError->message #} errInfo
-				return $ FL.append events $ FL.Fail $ Error $ T.pack message
-	
-	parseChunk _ (Just err) _ = return $ Just err
-	parseChunk ctx _ bytes = B.unsafeUseAsCStringLen bytes $ \(cs, csLen) -> do
-		rc <- {#call xmlParseChunk #} ctx cs (fromIntegral csLen) 0
-		return $ if rc == 0
-			then Nothing
-			else Just rc
-	
-	convertEvents = foldr FL.Next FL.Done . reverse
-
-withHandlers :: Ptr Context -> (IORef [Event] -> IO a) -> IO a
-withHandlers ctxt block = do
-	eventRef <- newIORef []
-	withFunPtr (onBeginElement eventRef) wrappedBegin $ \b -> do
-	withFunPtr (onEndElement eventRef) wrappedEnd $ \e -> do
-	withFunPtr (onCharacters eventRef) wrappedText $ \t -> do
-	withFunPtr (onComment eventRef) wrappedComment $ \c -> do
-	withFunPtr (onProcessingInstruction eventRef) wrappedProcessingInstruction $ \pI -> do
-	
-	bracket
-		(setContextHandlers ctxt)
-		(freeContextHandlers ctxt) $ \handlers -> do
-		
-		{#set xmlSAXHandler->initialized #} handlers xmlSax2Magic
-		{#set xmlSAXHandler->startElementNs #} handlers b
-		{#set xmlSAXHandler->endElementNs #} handlers e
-		{#set xmlSAXHandler->characters #} handlers t
-		{#set xmlSAXHandler->comment #} handlers c
-		{#set xmlSAXHandler->processingInstruction #} handlers pI
-		
-		block eventRef
-
-setContextHandlers :: Ptr Context -> IO (Ptr SAXHandler)
-setContextHandlers ctxt = do
-	handlers <- {#call calloc #} 1 {#sizeof xmlSAXHandler #}
-	let handlers' = castPtr handlers
-	{# set xmlParserCtxt->sax #} ctxt handlers'
-	return handlers'
-
-freeContextHandlers :: Ptr Context -> Ptr SAXHandler -> IO ()
-freeContextHandlers ctxt handlers = do
-	{# set xmlParserCtxt->sax #} ctxt nullPtr
-	free handlers
-
-withFunPtr :: a -> (a -> IO (FunPtr a)) -> (FunPtr a -> IO b) -> IO b
-withFunPtr f mkPtr block = bracket (mkPtr f) freeHaskellFunPtr block
+				let Context h' = h
+				errInfo <- {#call xmlCtxtGetLastError #} $ castPtr h'
+				message <- peekUTF8 =<< {#get xmlError->message #} errInfo
+				return $ Just message
+	case maybeErr of
+		Nothing -> return ()
+		Just err -> parserOnError p err
 
 -- localname, prefix, namespace, value_begin, value_end
 data CAttribute = CAttribute CString CString CString CString CString
 
 splitCAttributes :: CInt -> Ptr CString -> IO [CAttribute]
-splitCAttributes = splitCAttributes' 0 where
-	splitCAttributes' _      0 _     = return []
-	splitCAttributes' offset n attrs = do
+splitCAttributes = loop 0 where
+	loop _      0 _     = return []
+	loop offset n attrs = do
 		c_ln <- peekElemOff attrs (offset + 0)
 		c_prefix <- peekElemOff attrs (offset + 1)
 		c_ns <- peekElemOff attrs (offset + 2)
 		c_vbegin <- peekElemOff attrs (offset + 3)
 		c_vend <- peekElemOff attrs (offset + 4)
-		as <- splitCAttributes' (offset + 5) (n - 1) attrs
+		as <- loop (offset + 5) (n - 1) attrs
 		return (CAttribute c_ln c_prefix c_ns c_vbegin c_vend : as)
 
 convertCAttribute :: CAttribute -> IO X.Attribute
@@ -192,6 +169,11 @@ peekUTF8Len cstr = do
 	chunk <- B.packCStringLen cstr
 	return $ TE.decodeUtf8 $ BL.fromChunks [chunk]
 
+withUTF8 :: T.Text -> (CString -> IO a) -> IO a
+withUTF8 text io = B.useAsCString bytes io where
+	bytes = B.concat (BL.toChunks (TE.encodeUtf8 text))
+
+-- Callback adapters
 type CUString = Ptr CUChar
 
 type StartElementNsSAX2Func = (Ptr () -> CUString -> CUString
@@ -205,82 +187,57 @@ type CommentSAXFunc = Ptr () -> CUString -> IO ()
 
 type ProcessingInstructionSAXFunc = Ptr () -> CUString -> CUString -> IO ()
 
-onBeginElement :: IORef [Event] -> StartElementNsSAX2Func
-onBeginElement eventref _ cln cpfx cns _ _ n_attrs _ raw_attrs = do
+catchRef :: ST.STRef s (Maybe E.SomeException) -> Ptr () -> IO (ST.ST s ()) -> IO ()
+catchRef ref ctx getST = E.catch io onError where
+	io = do
+		st <- getST
+		E.unblock $ ST.unsafeSTToIO st
+	onError e = do
+		ST.unsafeSTToIO $ ST.writeSTRef ref $ Just e
+		{# call xmlStopParser #} (Context (castPtr ctx))
+		return ()
+
+onBeginElement :: ST.STRef s (Maybe E.SomeException)
+               -> (X.Name -> [X.Attribute] -> ST.ST s ())
+               -> StartElementNsSAX2Func
+onBeginElement ref st ctx cln cpfx cns _ _ n_attrs _ raw_attrs = catchRef ref ctx $ do
 	ns <- maybePeek peekUTF8 $ castPtr cns
 	pfx <- maybePeek peekUTF8 $ castPtr cpfx
 	ln <- peekUTF8 $ castPtr cln
-	es <- readIORef eventref
 	c_attrs <- splitCAttributes n_attrs (castPtr raw_attrs)
 	attrs <- mapM convertCAttribute c_attrs
-	writeIORef eventref ((BeginElement (X.Name ln ns pfx) attrs):es)
+	return $ st (X.Name ln ns pfx) attrs
 
-onEndElement :: IORef [Event] -> EndElementNsSAX2Func
-onEndElement eventref _ cln cpfx cns = do
+onEndElement :: ST.STRef s (Maybe E.SomeException)
+             -> (X.Name -> ST.ST s ())
+             -> EndElementNsSAX2Func
+onEndElement ref st ctx cln cpfx cns = catchRef ref ctx $ do
 	ns <- maybePeek peekUTF8 $ castPtr cns
 	pfx <- maybePeek peekUTF8 $ castPtr cpfx
 	ln <- peekUTF8 $ castPtr cln
-	es <- readIORef eventref
-	writeIORef eventref ((EndElement (X.Name ln ns pfx)):es)
+	return $ st (X.Name ln ns pfx)
 
-onCharacters :: IORef [Event] -> CharactersSAXFunc
-onCharacters eventref _ ctext ctextlen = do
+onCharacters :: ST.STRef s (Maybe E.SomeException)
+             -> (T.Text -> ST.ST s ())
+             -> CharactersSAXFunc
+onCharacters ref st ctx ctext ctextlen = catchRef ref ctx $ do
 	text <- peekUTF8Len (castPtr ctext, fromIntegral ctextlen)
-	es <- readIORef eventref
-	writeIORef eventref ((Characters text):es)
+	return $ st text
 
-onComment :: IORef [Event] -> CommentSAXFunc
-onComment eventRef _ ctext = do
+onComment :: ST.STRef s (Maybe E.SomeException)
+          -> (T.Text -> ST.ST s ())
+          -> CommentSAXFunc
+onComment ref st ctx ctext = catchRef ref ctx $ do
 	text <- peekUTF8 (castPtr ctext)
-	es <- readIORef eventRef
-	writeIORef eventRef ((Comment text):es)
+	return $ st text
 
-onProcessingInstruction :: IORef [Event] -> ProcessingInstructionSAXFunc
-onProcessingInstruction eventRef _ ctarget cdata = do
+onProcessingInstruction :: ST.STRef s (Maybe E.SomeException)
+                        -> (X.Instruction -> ST.ST s ())
+                        -> ProcessingInstructionSAXFunc
+onProcessingInstruction ref st ctx ctarget cdata = catchRef ref ctx $ do
 	target <- peekUTF8 (castPtr ctarget)
 	value <- peekUTF8 (castPtr cdata)
-	es <- readIORef eventRef
-	let instruction = X.Instruction target value
-	writeIORef eventRef ((ProcessingInstruction instruction):es)
-
--- | Convert a list of events to a single 'X.Element'. If the events do not
--- contain at least one valid element, 'Nothing' will be returned instead.
-eventsToElement :: [Event] -> Maybe X.Element
-eventsToElement es = case eventsToNodes es >>= X.isElement of
-	(e:_) -> Just e
-	_ -> Nothing
-
-eventsToNodes :: [Event] -> [X.Node]
-eventsToNodes = concatMap blockToNodes . splitBlocks
-
--- Split event list into a sequence of "blocks", which are the events including
--- and between a pair of tags. <start><start2/></start> and <start/> are both
--- single blocks.
-splitBlocks :: [Event] -> [[Event]]
-splitBlocks es = ret where
-	(_, _, ret) = foldl splitBlocks' (0, [], []) es
-	
-	splitBlocks' (depth, accum, allAccum) e = split where
-		split = if depth' == 0
-			then (depth', [], allAccum ++ [accum'])
-			else (depth', accum', allAccum)
-		accum' = accum ++ [e]
-		depth' :: Integer
-		depth' = depth + case e of
-			(BeginElement _ _) -> 1
-			(EndElement _) -> (- 1)
-			_ -> 0
-
-blockToNodes :: [Event] -> [X.Node]
-blockToNodes [] = []
-blockToNodes (begin:rest) = nodes where
-	end = last rest
-	nodes = case (begin, end) of
-		(BeginElement name' attrs, EndElement _) -> [node name' attrs]
-		(Characters t, _) -> [X.NodeContent (X.ContentText t)]
-		_ -> []
-	
-	node n as = X.NodeElement $ X.Element n as $ eventsToNodes $ init rest
+	return $ st (X.Instruction target value)
 
 foreign import ccall "wrapper"
 	wrappedBegin :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
@@ -295,7 +252,7 @@ foreign import ccall "wrapper"
 	wrappedComment :: CommentSAXFunc -> IO (FunPtr CommentSAXFunc)
 
 foreign import ccall "wrapper"
-	wrappedProcessingInstruction :: ProcessingInstructionSAXFunc -> IO (FunPtr ProcessingInstructionSAXFunc)
+	wrappedPI :: ProcessingInstructionSAXFunc -> IO (FunPtr ProcessingInstructionSAXFunc)
 
 -- XML_SAX2_MAGIC
 xmlSax2Magic :: CUInt
