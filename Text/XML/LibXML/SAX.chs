@@ -80,6 +80,7 @@ newParser callbacks onError filename = do
 		ctxFP <- withForeignPtr cCallbacks $ \sax ->
 			maybeWith withUTF8 filename $ \cFilename -> do
 				Context ctx <- {#call xmlCreatePushParserCtxt #} sax nullPtr nullPtr 0 cFilename
+				{#set xmlParserCtxt->replaceEntities #} ctx 1
 				newForeignPtr xmlFreeParserCtxt ctx
 		
 		return $ Parser ctxFP cCallbacks onError ref

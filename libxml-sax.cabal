@@ -1,5 +1,5 @@
 Name: libxml-sax
-Version: 0.5
+Version: 0.5.1
 stability: experimental
 Synopsis: Bindings for the libXML2 SAX interface
 License: MIT
