@@ -32,6 +32,7 @@ module Text.XML.LibXML.SAX
 	, parsedCharacters
 	, parsedComment
 	, parsedInstruction
+	, parsedDoctype
 	
 	-- *** Buffer-based callbacks
 	, parsedCharactersBuffer
@@ -83,7 +84,7 @@ newParserIO onError filename = E.block $ do
 	ParserHandle handlePtr <-
 		maybeWith withUTF8 filename $ \cFilename ->
 		allocaBytes {# sizeof xmlSAXHandler #} $ \sax -> do
-		{# call memset #} sax 0 {# sizeof xmlSAXHandler #}
+		void $ {# call memset #} sax 0 {# sizeof xmlSAXHandler #}
 		{#set xmlSAXHandler->initialized #} sax xmlSax2Magic
 		{#call xmlCreatePushParserCtxt #} sax nullPtr nullPtr 0 cFilename
 	
@@ -164,6 +165,8 @@ type CommentSAXFunc = Ptr () -> CUString -> IO ()
 
 type ProcessingInstructionSAXFunc = Ptr () -> CUString -> CUString -> IO ()
 
+type ExternalSubsetSAXFunc = Ptr () -> CUString -> CUString -> CUString -> IO ()
+
 foreign import ccall "wrapper"
 	allocCallback0 :: Callback0 -> IO (FunPtr Callback0)
 
@@ -181,6 +184,9 @@ foreign import ccall "wrapper"
 
 foreign import ccall "wrapper"
 	allocCallbackInstruction :: ProcessingInstructionSAXFunc -> IO (FunPtr ProcessingInstructionSAXFunc)
+
+foreign import ccall "wrapper"
+	allocCallbackExternalSubset :: ExternalSubsetSAXFunc -> IO (FunPtr ExternalSubsetSAXFunc)
 
 -- localname, prefix, namespace, value_begin, value_end
 data CAttribute = CAttribute CString CString CString CString CString
@@ -291,6 +297,24 @@ parsedInstruction :: Callback m (X.Instruction -> m Bool)
 parsedInstruction = callback wrapInstruction
 	{# get xmlSAXHandler->processingInstruction #}
 	{# set xmlSAXHandler->processingInstruction #}
+
+wrapExternalSubset :: Parser m -> (X.Doctype -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
+wrapExternalSubset p io =
+	allocCallbackExternalSubset $ \_ cname cpublic csystem ->
+	catchRef p $ parserFromIO p $ do
+		name <- peekUTF8 (castPtr cname)
+		public <- maybePeek peekUTF8 (castPtr cpublic)
+		system <- maybePeek peekUTF8 (castPtr csystem)
+		let external = case (public, system) of
+			(Nothing, Just s) -> Just $ X.SystemID s
+			(Just p', Just s) -> Just $ X.PublicID p' s
+			_ -> Nothing
+		parserToIO p $ io $ X.Doctype name external []
+
+parsedDoctype :: Callback m (X.Doctype -> m Bool)
+parsedDoctype = callback wrapExternalSubset
+	{# get xmlSAXHandler->externalSubset #}
+	{# set xmlSAXHandler->externalSubset #}
 
 wrapCharactersBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
                      -> IO (FunPtr CharactersSAXFunc)
