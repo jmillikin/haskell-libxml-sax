@@ -1,3 +1,6 @@
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE RankNTypes #-}
+
 -----------------------------------------------------------------------------
 -- |
 -- Module: Text.XML.LibXML.SAX
@@ -11,8 +14,6 @@
 --
 -----------------------------------------------------------------------------
 
-{-# LANGUAGE ForeignFunctionInterface #-}
-{-# LANGUAGE RankNTypes #-}
 module Text.XML.LibXML.SAX
 	(
 	-- * Parser
