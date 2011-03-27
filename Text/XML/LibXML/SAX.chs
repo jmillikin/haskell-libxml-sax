@@ -47,18 +47,20 @@ module Text.XML.LibXML.SAX
 	, parseComplete
 	) where
 import qualified Control.Exception as E
-import Control.Monad (when, unless)
+import           Control.Monad (when, unless)
 import qualified Control.Monad.ST as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
 import qualified Data.ByteString.Lazy as BL
+import           Data.Map (Map)
+import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
 import qualified Data.XML.Types as X
-import Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import Foreign hiding (free)
-import Foreign.C
+import           Data.IORef (IORef, newIORef, readIORef, writeIORef)
+import           Foreign hiding (free)
+import           Foreign.C
 import qualified Foreign.Concurrent as FC
 
 #include <libxml/parser.h>
@@ -203,13 +205,13 @@ splitCAttributes = loop 0 where
 		as <- loop (offset + 5) (n - 1) attrs
 		return (CAttribute c_ln c_prefix c_ns c_vbegin c_vend : as)
 
-convertCAttribute :: CAttribute -> IO X.Attribute
+convertCAttribute :: CAttribute -> IO (X.Name, [X.Content])
 convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
 	ln <- peekUTF8 c_ln
 	pfx <- maybePeek peekUTF8 c_pfx
 	ns <- maybePeek peekUTF8 c_ns
 	val <- peekUTF8Len (c_vbegin, minusPtr c_vend c_vbegin)
-	return (X.Attribute (X.Name ln ns pfx) [X.ContentText val])
+	return (X.Name ln ns pfx, [X.ContentText val])
 
 -- Exposed callbacks
 
@@ -226,7 +228,7 @@ parsedEndDocument = callback wrapCallback0
 	{# get xmlSAXHandler->endDocument #}
 	{# set xmlSAXHandler->endDocument #}
 
-wrapBeginElement :: Parser m -> (X.Name -> [X.Attribute] -> m Bool)
+wrapBeginElement :: Parser m -> (X.Name -> Map X.Name [X.Content] -> m Bool)
                  -> IO (FunPtr StartElementNsSAX2Func)
 wrapBeginElement p io =
 	allocCallbackBeginElement $ \_ cln cpfx cns _ _ n_attrs _ raw_attrs ->
@@ -236,9 +238,9 @@ wrapBeginElement p io =
 		ln <- peekUTF8 $ castPtr cln
 		c_attrs <- splitCAttributes n_attrs (castPtr raw_attrs)
 		attrs <- mapM convertCAttribute c_attrs
-		parserToIO p $ io (X.Name ln ns pfx) attrs
+		parserToIO p $ io (X.Name ln ns pfx) (Map.fromList attrs)
 
-parsedBeginElement :: Callback m (X.Name -> [X.Attribute] -> m Bool)
+parsedBeginElement :: Callback m (X.Name -> Map X.Name [X.Content] -> m Bool)
 parsedBeginElement = callback wrapBeginElement
 	{# get xmlSAXHandler->startElementNs #}
 	{# set xmlSAXHandler->startElementNs #}
@@ -263,7 +265,7 @@ wrapCharacters :: Parser m -> (T.Text -> m Bool)
 wrapCharacters p io =
 	allocCallbackCharacters $ \_ cstr clen ->
 	catchRef p $ parserFromIO p $ do
-		text <- peekStrictUTF8Len (castPtr cstr, fromIntegral clen)
+		text <- peekUTF8Len (castPtr cstr, fromIntegral clen)
 		parserToIO p $ io text
 
 parsedCharacters :: Callback m (T.Text -> m Bool)
@@ -276,7 +278,7 @@ wrapComment :: Parser m -> (T.Text -> m Bool)
 wrapComment p io =
 	allocCallbackComment $ \_ cstr ->
 	catchRef p $ parserFromIO p $ do
-		text <- peekStrictUTF8 (castPtr cstr)
+		text <- peekUTF8 (castPtr cstr)
 		parserToIO p $ io text
 
 parsedComment :: Callback m (T.Text -> m Bool)
@@ -388,26 +390,16 @@ getParseError :: Parser m -> IO T.Text
 getParseError p = withParserIO p $ \h -> do
 	let ParserHandle h' = h
 	errInfo <- {#call xmlCtxtGetLastError #} $ castPtr h'
-	peekStrictUTF8 =<< {#get xmlError->message #} errInfo
-	
+	peekUTF8 =<< {#get xmlError->message #} errInfo
 
-peekStrictUTF8 :: CString -> IO T.Text
-peekStrictUTF8 = fmap (TE.decodeUtf8) . B.packCString
+peekUTF8 :: CString -> IO T.Text
+peekUTF8 = fmap (TE.decodeUtf8) . B.packCString
 
-peekStrictUTF8Len :: CStringLen -> IO T.Text
-peekStrictUTF8Len = fmap (TE.decodeUtf8) . B.packCStringLen
-
-peekUTF8 :: CString -> IO TL.Text
-peekUTF8 = fmap (fromStrict . TE.decodeUtf8) . B.packCString
-
-peekUTF8Len :: CStringLen -> IO TL.Text
-peekUTF8Len = fmap (fromStrict . TE.decodeUtf8) . B.packCStringLen
+peekUTF8Len :: CStringLen -> IO T.Text
+peekUTF8Len = fmap (TE.decodeUtf8) . B.packCStringLen
 
 withUTF8 :: T.Text -> (CString -> IO a) -> IO a
 withUTF8 = B.useAsCString . TE.encodeUtf8
-
-fromStrict :: T.Text -> TL.Text
-fromStrict t = TL.fromChunks [t]
 
 freeFunPtr :: FunPtr a -> IO ()
 freeFunPtr ptr = if ptr == nullFunPtr
