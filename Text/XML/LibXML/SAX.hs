@@ -115,15 +115,15 @@ freeCallbacks ctx = do
 data Callback m a = Callback (Parser m -> a -> IO ()) (Parser m -> IO ())
 
 setCallback :: Parser m -> Callback m a -> a -> m ()
-setCallback p (Callback set _) io = parserFromIO p $ set p io
+setCallback p (Callback set _) io = parserFromIO p (set p io)
 
 clearCallback :: Parser m -> Callback m a -> m ()
-clearCallback p (Callback _ clear) = parserFromIO p $ clear p
+clearCallback p (Callback _ clear) = parserFromIO p (clear p)
 
 catchRef :: Parser m -> m Bool -> IO ()
 catchRef p io = do
 	continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
-		writeIORef (parserErrorRef p) $ Just e
+		writeIORef (parserErrorRef p) (Just e)
 		return False
 	unless continue (withParserIO p cStopParser)
 
@@ -205,7 +205,7 @@ convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
 -- Exposed callbacks
 
 wrapCallback0 :: Parser m -> m Bool -> IO (FunPtr Callback0)
-wrapCallback0 p io = allocCallback0 $ \_ -> catchRef p io
+wrapCallback0 p io = allocCallback0 (\_ -> catchRef p io)
 
 parsedBeginDocument :: Callback m (m Bool)
 parsedBeginDocument = callback wrapCallback0
@@ -222,12 +222,12 @@ wrapBeginElement :: Parser m -> (X.Name -> Map X.Name [X.Content] -> m Bool)
 wrapBeginElement p io =
 	allocCallbackBeginElement $ \_ cln cpfx cns _ _ n_attrs _ raw_attrs ->
 	catchRef p $ parserFromIO p $ do
-		ns <- maybePeek peekUTF8 $ castPtr cns
-		pfx <- maybePeek peekUTF8 $ castPtr cpfx
-		ln <- peekUTF8 $ castPtr cln
+		ns <- maybePeek peekUTF8 (castPtr cns)
+		pfx <- maybePeek peekUTF8 (castPtr cpfx)
+		ln <- peekUTF8 (castPtr cln)
 		c_attrs <- splitCAttributes n_attrs (castPtr raw_attrs)
 		attrs <- mapM convertCAttribute c_attrs
-		parserToIO p $ io (X.Name ln ns pfx) (Map.fromList attrs)
+		parserToIO p (io (X.Name ln ns pfx) (Map.fromList attrs))
 
 parsedBeginElement :: Callback m (X.Name -> Map X.Name [X.Content] -> m Bool)
 parsedBeginElement = callback wrapBeginElement
@@ -239,10 +239,10 @@ wrapEndElement :: Parser m -> (X.Name -> m Bool)
 wrapEndElement p io =
 	allocCallbackEndElement $ \_ cln cpfx cns ->
 	catchRef p $ parserFromIO p $ do
-		ns <- maybePeek peekUTF8 $ castPtr cns
-		pfx <- maybePeek peekUTF8 $ castPtr cpfx
-		ln <- peekUTF8 $ castPtr cln
-		parserToIO p $ io $ X.Name ln ns pfx
+		ns <- maybePeek peekUTF8 (castPtr cns)
+		pfx <- maybePeek peekUTF8 (castPtr cpfx)
+		ln <- peekUTF8 (castPtr cln)
+		parserToIO p (io (X.Name ln ns pfx))
 
 parsedEndElement :: Callback m (X.Name -> m Bool)
 parsedEndElement = callback wrapEndElement
@@ -255,7 +255,7 @@ wrapCharacters p io =
 	allocCallbackCharacters $ \_ cstr clen ->
 	catchRef p $ parserFromIO p $ do
 		text <- peekUTF8Len (castPtr cstr, fromIntegral clen)
-		parserToIO p $ io text
+		parserToIO p (io text)
 
 parsedCharacters :: Callback m (T.Text -> m Bool)
 parsedCharacters = callback wrapCharacters
@@ -268,7 +268,7 @@ wrapComment p io =
 	allocCallbackComment $ \_ cstr ->
 	catchRef p $ parserFromIO p $ do
 		text <- peekUTF8 (castPtr cstr)
-		parserToIO p $ io text
+		parserToIO p (io text)
 
 parsedComment :: Callback m (T.Text -> m Bool)
 parsedComment = callback wrapComment
@@ -282,7 +282,7 @@ wrapInstruction p io =
 	catchRef p $ parserFromIO p $ do
 		target <- peekUTF8 (castPtr ctarget)
 		value <- peekUTF8 (castPtr cdata)
-		parserToIO p $ io $ X.Instruction target value
+		parserToIO p (io (X.Instruction target value))
 
 parsedInstruction :: Callback m (X.Instruction -> m Bool)
 parsedInstruction = callback wrapInstruction
@@ -297,10 +297,10 @@ wrapExternalSubset p io =
 		public <- maybePeek peekUTF8 (castPtr cpublic)
 		system <- maybePeek peekUTF8 (castPtr csystem)
 		let external = case (public, system) of
-			(Nothing, Just s) -> Just $ X.SystemID s
-			(Just p', Just s) -> Just $ X.PublicID p' s
+			(Nothing, Just s) -> Just (X.SystemID s)
+			(Just p', Just s) -> Just (X.PublicID p' s)
 			_ -> Nothing
-		parserToIO p $ io $ X.Doctype name external []
+		parserToIO p (io (X.Doctype name external []))
 
 parsedDoctype :: Callback m (X.Doctype -> m Bool)
 parsedDoctype = callback wrapExternalSubset
@@ -325,7 +325,7 @@ wrapCommentBuffer p io =
 	allocCallbackComment $ \_ cstr ->
 	catchRef p $ parserFromIO p $ do
 		clen <- cXmlStrlen cstr
-		parserToIO p $ io (castPtr cstr, fromIntegral clen)
+		parserToIO p (io (castPtr cstr, fromIntegral clen))
 
 parsedCommentBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
 parsedCommentBuffer = callback wrapCommentBuffer
@@ -338,16 +338,16 @@ withParserIO p io = withForeignPtr (parserHandle p) io
 parseImpl :: Parser m -> (Ptr Context -> IO CInt) -> m ()
 parseImpl p io = parserFromIO p $ do
 	writeIORef (parserErrorRef p) Nothing
-	rc <- E.block $ withParserIO p io
+	rc <- E.block (withParserIO p io)
 	
-	threw <- readIORef $ parserErrorRef p
+	threw <- readIORef (parserErrorRef p)
 	case threw of
 		Nothing -> return ()
 		Just exc -> E.throwIO exc
 	
 	when (rc /= 0) $ do
 		err <- getParseError p
-		parserToIO p $ parserOnError p $ err
+		parserToIO p (parserOnError p err)
 
 parseText :: Parser m -> T.Text -> m ()
 parseText p = parseBytes p . TE.encodeUtf8
