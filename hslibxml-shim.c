@@ -10,7 +10,6 @@ hslibxml_alloc_parser(const char *filename)
 	memset(&sax, 0, sizeof(xmlSAXHandler));
 	sax.initialized = XML_SAX2_MAGIC;
 	ctx = xmlCreatePushParserCtxt(&sax, NULL, NULL, 0, filename);
-	ctx->replaceEntities = 1;
 	return ctx;
 }
 
