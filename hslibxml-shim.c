@@ -67,6 +67,12 @@ hslibxml_getcb_comment(xmlParserCtxt *ctx)
 	return ctx->sax->comment;
 }
 
+cdataBlockSAXFunc
+hslibxml_getcb_cdata(xmlParserCtxt *ctx)
+{
+	return ctx->sax->cdataBlock;
+}
+
 externalSubsetSAXFunc
 hslibxml_getcb_external_subset(xmlParserCtxt *ctx)
 {
@@ -119,6 +125,12 @@ void
 hslibxml_setcb_comment(xmlParserCtxt *ctx, commentSAXFunc cb)
 {
 	ctx->sax->comment = cb;
+}
+
+void
+hslibxml_setcb_cdata(xmlParserCtxt *ctx, cdataBlockSAXFunc cb)
+{
+	ctx->sax->cdataBlock = cb;
 }
 
 void

@@ -34,6 +34,7 @@ module Text.XML.LibXML.SAX
 	, parsedReference
 	, parsedComment
 	, parsedInstruction
+	, parsedCDATA
 	, parsedDoctype
 	
 	-- *** Buffer-based callbacks
@@ -110,6 +111,7 @@ freeCallbacks ctx = do
 	cGetCB_Characters ctx >>= freeFunPtr
 	cGetCB_Instruction ctx >>= freeFunPtr
 	cGetCB_Comment ctx >>= freeFunPtr
+	cGetCB_CDATA ctx >>= freeFunPtr
 
 -- | A callback should return 'True' to continue parsing, or 'False'
 -- to cancel.
@@ -315,6 +317,11 @@ parsedInstruction = callback wrapInstruction
 	cGetCB_Instruction
 	cSetCB_Instruction
 
+parsedCDATA :: Callback m (T.Text -> m Bool)
+parsedCDATA = callback wrapCharacters
+	cGetCB_CDATA
+	cSetCB_CDATA
+
 wrapExternalSubset :: Parser m -> (X.Doctype -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
 wrapExternalSubset p io =
 	allocCallbackExternalSubset $ \ctx cname cpublic csystem ->
@@ -457,6 +464,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_instruction"
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_comment"
 	cGetCB_Comment :: Ptr Context -> IO (FunPtr CommentSAXFunc)
 
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdata"
+	cGetCB_CDATA :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_external_subset"
 	cGetCB_ExternalSubset :: Ptr Context -> IO (FunPtr ExternalSubsetSAXFunc)
 
@@ -483,6 +493,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_instruction"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_comment"
 	cSetCB_Comment :: Ptr Context -> FunPtr CommentSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdata"
+	cSetCB_CDATA :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_external_subset"
 	cSetCB_ExternalSubset :: Ptr Context -> FunPtr ExternalSubsetSAXFunc -> IO ()

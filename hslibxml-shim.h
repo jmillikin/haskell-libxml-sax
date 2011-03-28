@@ -33,6 +33,9 @@ hslibxml_getcb_instruction(xmlParserCtxt *ctx);
 commentSAXFunc
 hslibxml_getcb_comment(xmlParserCtxt *ctx);
 
+charactersSAXFunc
+hslibxml_getcb_cdata(xmlParserCtxt *ctx);
+
 externalSubsetSAXFunc
 hslibxml_getcb_external_subset(xmlParserCtxt *ctx);
 
@@ -59,6 +62,9 @@ hslibxml_setcb_instruction(xmlParserCtxt *ctx, processingInstructionSAXFunc cb);
 
 void
 hslibxml_setcb_comment(xmlParserCtxt *ctx, commentSAXFunc cb);
+
+void
+hslibxml_setcb_cdata(xmlParserCtxt *ctx, charactersSAXFunc cb);
 
 void
 hslibxml_setcb_external_subset(xmlParserCtxt *ctx, externalSubsetSAXFunc cb);
