@@ -68,6 +68,16 @@ import qualified Foreign.Concurrent as FC
 
 data Context = Context
 
+data Entity = Entity
+
+data ParserInput = ParserInput
+
+data Enumeration = Enumeration
+
+data ElementContent = ElementContent
+
+data XmlError = XmlError
+
 data Parser m = Parser
 	{ parserHandle :: ForeignPtr Context
 	, parserErrorRef :: IORef (Maybe E.SomeException)
@@ -103,15 +113,15 @@ newParserST onError filename = ST.unsafeIOToST $ do
 
 freeCallbacks :: Ptr Context -> IO ()
 freeCallbacks ctx = do
-	cGetCB_StartDocument ctx >>= freeFunPtr
-	cGetCB_EndElement ctx >>= freeFunPtr
-	cGetCB_StartElement ctx >>= freeFunPtr
-	cGetCB_EndElement ctx >>= freeFunPtr
-	cGetCB_Reference ctx >>= freeFunPtr
-	cGetCB_Characters ctx >>= freeFunPtr
-	cGetCB_Instruction ctx >>= freeFunPtr
-	cGetCB_Comment ctx >>= freeFunPtr
-	cGetCB_CDATA ctx >>= freeFunPtr
+	getcb_startDocument ctx >>= freeFunPtr
+	getcb_endDocument ctx >>= freeFunPtr
+	getcb_startElementNs ctx >>= freeFunPtr
+	getcb_endElementNs ctx >>= freeFunPtr
+	getcb_reference ctx >>= freeFunPtr
+	getcb_characters ctx >>= freeFunPtr
+	getcb_processingInstruction ctx >>= freeFunPtr
+	getcb_comment ctx >>= freeFunPtr
+	getcb_cdataBlock ctx >>= freeFunPtr
 
 -- | A callback should return 'True' to continue parsing, or 'False'
 -- to cancel.
@@ -151,27 +161,8 @@ callback wrap getPtr setPtr = Callback set clear where
 	free ctx = getPtr ctx >>= freeFunPtr
 
 -- Callback wrappers
-type CUString = Ptr CUChar
-
-type Callback0 = Ptr Context -> IO ()
-
-type StartElementNsSAX2Func = (Ptr Context -> CUString -> CUString
-                               -> CUString -> CInt -> Ptr CUString -> CInt
-                               -> CInt -> Ptr CUString -> IO ())
-type EndElementNsSAX2Func = (Ptr Context -> CUString -> CUString -> CUString -> IO ())
-
-type CharactersSAXFunc = (Ptr Context -> CUString -> CInt -> IO ())
-
-type ReferenceSAXFunc = Ptr Context -> CUString -> IO ()
-
-type CommentSAXFunc = Ptr Context -> CUString -> IO ()
-
-type ProcessingInstructionSAXFunc = Ptr Context -> CUString -> CUString -> IO ()
-
-type ExternalSubsetSAXFunc = Ptr Context -> CUString -> CUString -> CUString -> IO ()
-
 foreign import ccall "wrapper"
-	allocCallback0 :: Callback0 -> IO (FunPtr Callback0)
+	allocCallback0 :: (Ptr Context -> IO ()) -> IO (FunPtr (Ptr Context -> IO ()))
 
 foreign import ccall "wrapper"
 	allocCallbackBeginElement :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
@@ -219,18 +210,18 @@ convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
 
 -- Exposed callbacks
 
-wrapCallback0 :: Parser m -> m Bool -> IO (FunPtr Callback0)
+wrapCallback0 :: Parser m -> m Bool -> IO (FunPtr (Ptr Context -> IO ()))
 wrapCallback0 p io = allocCallback0 (\ctx -> catchRef p ctx io)
 
 parsedBeginDocument :: Callback m (m Bool)
 parsedBeginDocument = callback wrapCallback0
-	cGetCB_StartDocument
-	cSetCB_StartDocument
+	getcb_startDocument
+	setcb_startDocument
 
 parsedEndDocument :: Callback m (m Bool)
 parsedEndDocument = callback wrapCallback0
-	cGetCB_EndDocument
-	cSetCB_EndDocument
+	getcb_endDocument
+	setcb_endDocument
 
 wrapBeginElement :: Parser m -> (X.Name -> Map X.Name [X.Content] -> m Bool)
                  -> IO (FunPtr StartElementNsSAX2Func)
@@ -246,8 +237,8 @@ wrapBeginElement p io =
 
 parsedBeginElement :: Callback m (X.Name -> Map X.Name [X.Content] -> m Bool)
 parsedBeginElement = callback wrapBeginElement
-	cGetCB_StartElement
-	cSetCB_StartElement
+	getcb_startElementNs
+	setcb_startElementNs
 
 wrapEndElement :: Parser m -> (X.Name -> m Bool)
                -> IO (FunPtr EndElementNsSAX2Func)
@@ -261,8 +252,8 @@ wrapEndElement p io =
 
 parsedEndElement :: Callback m (X.Name -> m Bool)
 parsedEndElement = callback wrapEndElement
-	cGetCB_EndElement
-	cSetCB_EndElement
+	getcb_endElementNs
+	setcb_endElementNs
 
 wrapCharacters :: Parser m -> (T.Text -> m Bool)
                -> IO (FunPtr CharactersSAXFunc)
@@ -274,8 +265,8 @@ wrapCharacters p io =
 
 parsedCharacters :: Callback m (T.Text -> m Bool)
 parsedCharacters = callback wrapCharacters
-	cGetCB_Characters
-	cSetCB_Characters
+	getcb_characters
+	setcb_characters
 
 wrapReference :: Parser m -> (T.Text -> m Bool)
                -> IO (FunPtr ReferenceSAXFunc)
@@ -287,8 +278,8 @@ wrapReference p io =
 
 parsedReference :: Callback m (T.Text -> m Bool)
 parsedReference = callback wrapReference
-	cGetCB_Reference
-	cSetCB_Reference
+	getcb_reference
+	setcb_reference
 
 wrapComment :: Parser m -> (T.Text -> m Bool)
             -> IO (FunPtr CommentSAXFunc)
@@ -300,8 +291,8 @@ wrapComment p io =
 
 parsedComment :: Callback m (T.Text -> m Bool)
 parsedComment = callback wrapComment
-	cGetCB_Comment
-	cSetCB_Comment
+	getcb_comment
+	setcb_comment
 
 wrapInstruction :: Parser m -> (X.Instruction -> m Bool)
                 -> IO (FunPtr ProcessingInstructionSAXFunc)
@@ -314,13 +305,13 @@ wrapInstruction p io =
 
 parsedInstruction :: Callback m (X.Instruction -> m Bool)
 parsedInstruction = callback wrapInstruction
-	cGetCB_Instruction
-	cSetCB_Instruction
+	getcb_processingInstruction
+	setcb_processingInstruction
 
 parsedCDATA :: Callback m (T.Text -> m Bool)
 parsedCDATA = callback wrapCharacters
-	cGetCB_CDATA
-	cSetCB_CDATA
+	getcb_cdataBlock
+	setcb_cdataBlock
 
 wrapExternalSubset :: Parser m -> (X.Doctype -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
 wrapExternalSubset p io =
@@ -337,8 +328,8 @@ wrapExternalSubset p io =
 
 parsedDoctype :: Callback m (X.Doctype -> m Bool)
 parsedDoctype = callback wrapExternalSubset
-	cGetCB_ExternalSubset
-	cSetCB_ExternalSubset
+	getcb_externalSubset
+	setcb_externalSubset
 
 wrapCharactersBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
                      -> IO (FunPtr CharactersSAXFunc)
@@ -348,8 +339,8 @@ wrapCharactersBuffer p io =
 
 parsedCharactersBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
 parsedCharactersBuffer = callback wrapCharactersBuffer
-	cGetCB_Characters
-	cSetCB_Characters
+	getcb_characters
+	setcb_characters
 
 wrapCommentBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
             -> IO (FunPtr CommentSAXFunc)
@@ -361,8 +352,8 @@ wrapCommentBuffer p io =
 
 parsedCommentBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
 parsedCommentBuffer = callback wrapCommentBuffer
-	cGetCB_Comment
-	cSetCB_Comment
+	getcb_comment
+	setcb_comment
 
 withParserIO :: Parser m -> (Ptr Context -> IO a) -> IO a
 withParserIO p io = withForeignPtr (parserHandle p) io
@@ -422,6 +413,62 @@ freeFunPtr ptr = if ptr == nullFunPtr
 	then return ()
 	else freeHaskellFunPtr ptr
 
+type CUString = Ptr CUChar
+
+type InternalSubsetSAXFunc = Ptr Context -> CUString -> CUString -> CUString -> IO ()
+
+type IsStandaloneSAXFunc = Ptr Context -> IO CInt
+
+type HasInternalSubsetSAXFunc = Ptr Context -> IO CInt
+
+type HasExternalSubsetSAXFunc = Ptr Context -> IO CInt
+
+type ResolveEntitySAXFunc = Ptr Context -> CUString -> CUString -> IO (Ptr ParserInput)
+
+type GetEntitySAXFunc = Ptr Context -> CUString -> IO (Ptr Entity)
+
+type EntityDeclSAXFunc = Ptr Context -> CUString -> CInt -> CUString -> CUString -> CUString -> IO ()
+
+type NotationDeclSAXFunc = Ptr Context -> CUString -> CUString -> CUString -> IO ()
+
+type AttributeDeclSAXFunc = Ptr Context -> CUString -> CUString -> CInt -> CInt -> CUString -> Ptr Enumeration -> IO ()
+
+type ElementDeclSAXFunc = Ptr Context -> CUString -> CInt -> Ptr ElementContent -> IO ()
+
+type UnparsedEntityDeclSAXFunc = Ptr Context -> CUString -> CUString -> CUString -> CUString -> IO ()
+
+type StartDocumentSAXFunc = Ptr Context -> IO ()
+
+type EndDocumentSAXFunc = Ptr Context -> IO ()
+
+type ReferenceSAXFunc = Ptr Context -> CUString -> IO ()
+
+type CharactersSAXFunc = (Ptr Context -> CUString -> CInt -> IO ())
+
+type IgnorableWhitespaceSAXFunc = Ptr Context -> CUString -> CInt -> IO ()
+
+type ProcessingInstructionSAXFunc = Ptr Context -> CUString -> CUString -> IO ()
+
+type CommentSAXFunc = Ptr Context -> CUString -> IO ()
+
+type WarningSAXFunc = Ptr Context -> IO () -- TODO
+
+type ErrorSAXFunc = Ptr Context -> IO () -- TODO
+
+type FatalErrorSAXFunc = Ptr Context -> IO () -- TODO
+
+type GetParameterEntitySAXFunc = Ptr Context -> CUString -> IO (Ptr Entity)
+
+type CdataBlockSAXFunc = Ptr Context -> CUString -> CInt -> IO ()
+
+type ExternalSubsetSAXFunc = Ptr Context -> CUString -> CUString -> CUString -> IO ()
+
+type StartElementNsSAX2Func = (Ptr Context -> CUString -> CUString -> CUString -> CInt -> Ptr CUString -> CInt -> CInt -> Ptr CUString -> IO ())
+
+type EndElementNsSAX2Func = (Ptr Context -> CUString -> CUString -> CUString -> IO ())
+
+type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
 	cAllocParser :: CString -> IO (Ptr Context)
 
@@ -440,62 +487,164 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_get_last_error"
 foreign import ccall unsafe "libxml/parser.h xmlStrlen"
 	cXmlStrlen :: Ptr CUChar -> IO CInt
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_start_document"
-	cGetCB_StartDocument :: Ptr Context -> IO (FunPtr Callback0)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_internalSubset"
+	getcb_internalSubset :: Ptr Context -> IO (FunPtr InternalSubsetSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_end_document"
-	cGetCB_EndDocument :: Ptr Context -> IO (FunPtr Callback0)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_isStandalone"
+	getcb_isStandalone :: Ptr Context -> IO (FunPtr IsStandaloneSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_start_element"
-	cGetCB_StartElement :: Ptr Context -> IO (FunPtr StartElementNsSAX2Func)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_hasInternalSubset"
+	getcb_hasInternalSubset :: Ptr Context -> IO (FunPtr HasInternalSubsetSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_end_element"
-	cGetCB_EndElement :: Ptr Context -> IO (FunPtr EndElementNsSAX2Func)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_hasExternalSubset"
+	getcb_hasExternalSubset :: Ptr Context -> IO (FunPtr HasExternalSubsetSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_resolveEntity"
+	getcb_resolveEntity :: Ptr Context -> IO (FunPtr ResolveEntitySAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_getEntity"
+	getcb_getEntity :: Ptr Context -> IO (FunPtr GetEntitySAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_entityDecl"
+	getcb_entityDecl :: Ptr Context -> IO (FunPtr EntityDeclSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_notationDecl"
+	getcb_notationDecl :: Ptr Context -> IO (FunPtr NotationDeclSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_attributeDecl"
+	getcb_attributeDecl :: Ptr Context -> IO (FunPtr AttributeDeclSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_elementDecl"
+	getcb_elementDecl :: Ptr Context -> IO (FunPtr ElementDeclSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_unparsedEntityDecl"
+	getcb_unparsedEntityDecl :: Ptr Context -> IO (FunPtr UnparsedEntityDeclSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_startDocument"
+	getcb_startDocument :: Ptr Context -> IO (FunPtr StartDocumentSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_endDocument"
+	getcb_endDocument :: Ptr Context -> IO (FunPtr EndDocumentSAXFunc)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_reference"
-	cGetCB_Reference :: Ptr Context -> IO (FunPtr ReferenceSAXFunc)
+	getcb_reference :: Ptr Context -> IO (FunPtr ReferenceSAXFunc)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_characters"
-	cGetCB_Characters :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
+	getcb_characters :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_instruction"
-	cGetCB_Instruction :: Ptr Context -> IO (FunPtr ProcessingInstructionSAXFunc)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_ignorableWhitespace"
+	getcb_ignorableWhitespace :: Ptr Context -> IO (FunPtr IgnorableWhitespaceSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_processingInstruction"
+	getcb_processingInstruction :: Ptr Context -> IO (FunPtr ProcessingInstructionSAXFunc)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_comment"
-	cGetCB_Comment :: Ptr Context -> IO (FunPtr CommentSAXFunc)
+	getcb_comment :: Ptr Context -> IO (FunPtr CommentSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdata"
-	cGetCB_CDATA :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_warning"
+	getcb_warning :: Ptr Context -> IO (FunPtr WarningSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_external_subset"
-	cGetCB_ExternalSubset :: Ptr Context -> IO (FunPtr ExternalSubsetSAXFunc)
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_error"
+	getcb_error :: Ptr Context -> IO (FunPtr ErrorSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_start_document"
-	cSetCB_StartDocument :: Ptr Context -> FunPtr Callback0 -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_fatalError"
+	getcb_fatalError :: Ptr Context -> IO (FunPtr FatalErrorSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_end_document"
-	cSetCB_EndDocument :: Ptr Context -> FunPtr Callback0 -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_getParameterEntity"
+	getcb_getParameterEntity :: Ptr Context -> IO (FunPtr GetParameterEntitySAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_start_element"
-	cSetCB_StartElement :: Ptr Context -> FunPtr StartElementNsSAX2Func -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdataBlock"
+	getcb_cdataBlock :: Ptr Context -> IO (FunPtr CdataBlockSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_end_element"
-	cSetCB_EndElement :: Ptr Context -> FunPtr EndElementNsSAX2Func -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_externalSubset"
+	getcb_externalSubset :: Ptr Context -> IO (FunPtr ExternalSubsetSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_startElementNs"
+	getcb_startElementNs :: Ptr Context -> IO (FunPtr StartElementNsSAX2Func)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_endElementNs"
+	getcb_endElementNs :: Ptr Context -> IO (FunPtr EndElementNsSAX2Func)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_serror"
+	getcb_serror :: Ptr Context -> IO (FunPtr XmlStructuredErrorFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_internalSubset"
+	setcb_internalSubset :: Ptr Context -> FunPtr InternalSubsetSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_isStandalone"
+	setcb_isStandalone :: Ptr Context -> FunPtr IsStandaloneSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_hasInternalSubset"
+	setcb_hasInternalSubset :: Ptr Context -> FunPtr HasInternalSubsetSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_hasExternalSubset"
+	setcb_hasExternalSubset :: Ptr Context -> FunPtr HasExternalSubsetSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_resolveEntity"
+	setcb_resolveEntity :: Ptr Context -> FunPtr ResolveEntitySAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_getEntity"
+	setcb_getEntity :: Ptr Context -> FunPtr GetEntitySAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_entityDecl"
+	setcb_entityDecl :: Ptr Context -> FunPtr EntityDeclSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_notationDecl"
+	setcb_notationDecl :: Ptr Context -> FunPtr NotationDeclSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_attributeDecl"
+	setcb_attributeDecl :: Ptr Context -> FunPtr AttributeDeclSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_elementDecl"
+	setcb_elementDecl :: Ptr Context -> FunPtr ElementDeclSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_unparsedEntityDecl"
+	setcb_unparsedEntityDecl :: Ptr Context -> FunPtr UnparsedEntityDeclSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_startDocument"
+	setcb_startDocument :: Ptr Context -> FunPtr StartDocumentSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_endDocument"
+	setcb_endDocument :: Ptr Context -> FunPtr EndDocumentSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_reference"
-	cSetCB_Reference :: Ptr Context -> FunPtr ReferenceSAXFunc -> IO ()
+	setcb_reference :: Ptr Context -> FunPtr ReferenceSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_characters"
-	cSetCB_Characters :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
+	setcb_characters :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_instruction"
-	cSetCB_Instruction :: Ptr Context -> FunPtr ProcessingInstructionSAXFunc -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_ignorableWhitespace"
+	setcb_ignorableWhitespace :: Ptr Context -> FunPtr IgnorableWhitespaceSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_processingInstruction"
+	setcb_processingInstruction :: Ptr Context -> FunPtr ProcessingInstructionSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_comment"
-	cSetCB_Comment :: Ptr Context -> FunPtr CommentSAXFunc -> IO ()
+	setcb_comment :: Ptr Context -> FunPtr CommentSAXFunc -> IO ()
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdata"
-	cSetCB_CDATA :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_warning"
+	setcb_warning :: Ptr Context -> FunPtr WarningSAXFunc -> IO ()
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_external_subset"
-	cSetCB_ExternalSubset :: Ptr Context -> FunPtr ExternalSubsetSAXFunc -> IO ()
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_error"
+	setcb_error :: Ptr Context -> FunPtr ErrorSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_fatalError"
+	setcb_fatalError :: Ptr Context -> FunPtr FatalErrorSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_getParameterEntity"
+	setcb_getParameterEntity :: Ptr Context -> FunPtr GetParameterEntitySAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdataBlock"
+	setcb_cdataBlock :: Ptr Context -> FunPtr CdataBlockSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_externalSubset"
+	setcb_externalSubset :: Ptr Context -> FunPtr ExternalSubsetSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_startElementNs"
+	setcb_startElementNs :: Ptr Context -> FunPtr StartElementNsSAX2Func -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_endElementNs"
+	setcb_endElementNs :: Ptr Context -> FunPtr EndElementNsSAX2Func -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_serror"
+	setcb_serror :: Ptr Context -> FunPtr XmlStructuredErrorFunc -> IO ()
