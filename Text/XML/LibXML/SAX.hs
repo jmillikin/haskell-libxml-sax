@@ -122,12 +122,18 @@ setCallback p (Callback set _) io = parserFromIO p (set p io)
 clearCallback :: Parser m -> Callback m a -> m ()
 clearCallback p (Callback _ clear) = parserFromIO p (clear p)
 
-catchRef :: Parser m -> m Bool -> IO ()
-catchRef p io = do
-	continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
-		writeIORef (parserErrorRef p) (Just e)
-		return False
-	unless continue (withParserIO p cStopParser)
+catchRef :: Parser m -> Ptr Context -> m Bool -> IO ()
+catchRef p cb_ctx io = withParserIO p $ \ctx ->
+	if ctx == cb_ctx
+		then do
+			continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
+				writeIORef (parserErrorRef p) (Just e)
+				return False
+			unless continue (cStopParser ctx)
+		else return ()
+
+catchRefIO :: Parser m -> Ptr Context -> IO Bool -> IO ()
+catchRefIO p cb_ctx io = catchRef p cb_ctx (parserFromIO p io)
 
 callback :: (Parser m -> a -> IO (FunPtr b))
          -> (Ptr Context -> IO (FunPtr b))
@@ -212,7 +218,7 @@ convertCAttribute (CAttribute c_ln c_pfx c_ns c_vbegin c_vend) = do
 -- Exposed callbacks
 
 wrapCallback0 :: Parser m -> m Bool -> IO (FunPtr Callback0)
-wrapCallback0 p io = allocCallback0 (\_ -> catchRef p io)
+wrapCallback0 p io = allocCallback0 (\ctx -> catchRef p ctx io)
 
 parsedBeginDocument :: Callback m (m Bool)
 parsedBeginDocument = callback wrapCallback0
@@ -227,8 +233,8 @@ parsedEndDocument = callback wrapCallback0
 wrapBeginElement :: Parser m -> (X.Name -> Map X.Name [X.Content] -> m Bool)
                  -> IO (FunPtr StartElementNsSAX2Func)
 wrapBeginElement p io =
-	allocCallbackBeginElement $ \_ cln cpfx cns _ _ n_attrs _ raw_attrs ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackBeginElement $ \ctx cln cpfx cns _ _ n_attrs _ raw_attrs ->
+	catchRefIO p ctx $ do
 		ns <- maybePeek peekUTF8 (castPtr cns)
 		pfx <- maybePeek peekUTF8 (castPtr cpfx)
 		ln <- peekUTF8 (castPtr cln)
@@ -244,8 +250,8 @@ parsedBeginElement = callback wrapBeginElement
 wrapEndElement :: Parser m -> (X.Name -> m Bool)
                -> IO (FunPtr EndElementNsSAX2Func)
 wrapEndElement p io =
-	allocCallbackEndElement $ \_ cln cpfx cns ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackEndElement $ \ctx cln cpfx cns ->
+	catchRefIO p ctx $ do
 		ns <- maybePeek peekUTF8 (castPtr cns)
 		pfx <- maybePeek peekUTF8 (castPtr cpfx)
 		ln <- peekUTF8 (castPtr cln)
@@ -259,8 +265,8 @@ parsedEndElement = callback wrapEndElement
 wrapCharacters :: Parser m -> (T.Text -> m Bool)
                -> IO (FunPtr CharactersSAXFunc)
 wrapCharacters p io =
-	allocCallbackCharacters $ \_ cstr clen ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackCharacters $ \ctx cstr clen ->
+	catchRefIO p ctx $ do
 		text <- peekUTF8Len (castPtr cstr, fromIntegral clen)
 		parserToIO p (io text)
 
@@ -272,8 +278,8 @@ parsedCharacters = callback wrapCharacters
 wrapReference :: Parser m -> (T.Text -> m Bool)
                -> IO (FunPtr ReferenceSAXFunc)
 wrapReference p io =
-	allocCallbackReference $ \_ cstr ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackReference $ \ctx cstr ->
+	catchRefIO p ctx $ do
 		text <- peekUTF8 (castPtr cstr)
 		parserToIO p (io text)
 
@@ -285,8 +291,8 @@ parsedReference = callback wrapReference
 wrapComment :: Parser m -> (T.Text -> m Bool)
             -> IO (FunPtr CommentSAXFunc)
 wrapComment p io =
-	allocCallbackComment $ \_ cstr ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackComment $ \ctx cstr ->
+	catchRefIO p ctx $ do
 		text <- peekUTF8 (castPtr cstr)
 		parserToIO p (io text)
 
@@ -298,8 +304,8 @@ parsedComment = callback wrapComment
 wrapInstruction :: Parser m -> (X.Instruction -> m Bool)
                 -> IO (FunPtr ProcessingInstructionSAXFunc)
 wrapInstruction p io =
-	allocCallbackInstruction $ \_ ctarget cdata ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackInstruction $ \ctx ctarget cdata ->
+	catchRefIO p ctx $ do
 		target <- peekUTF8 (castPtr ctarget)
 		value <- peekUTF8 (castPtr cdata)
 		parserToIO p (io (X.Instruction target value))
@@ -311,8 +317,8 @@ parsedInstruction = callback wrapInstruction
 
 wrapExternalSubset :: Parser m -> (X.Doctype -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
 wrapExternalSubset p io =
-	allocCallbackExternalSubset $ \_ cname cpublic csystem ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackExternalSubset $ \ctx cname cpublic csystem ->
+	catchRefIO p ctx $ do
 		name <- peekUTF8 (castPtr cname)
 		public <- maybePeek peekUTF8 (castPtr cpublic)
 		system <- maybePeek peekUTF8 (castPtr csystem)
@@ -330,9 +336,8 @@ parsedDoctype = callback wrapExternalSubset
 wrapCharactersBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
                      -> IO (FunPtr CharactersSAXFunc)
 wrapCharactersBuffer p io =
-	allocCallbackCharacters $ \_ cstr clen ->
-	catchRef p $ do
-		io (castPtr cstr, fromIntegral clen)
+	allocCallbackCharacters $ \ctx cstr clen ->
+	catchRef p ctx (io (castPtr cstr, fromIntegral clen))
 
 parsedCharactersBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
 parsedCharactersBuffer = callback wrapCharactersBuffer
@@ -342,8 +347,8 @@ parsedCharactersBuffer = callback wrapCharactersBuffer
 wrapCommentBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
             -> IO (FunPtr CommentSAXFunc)
 wrapCommentBuffer p io =
-	allocCallbackComment $ \_ cstr ->
-	catchRef p $ parserFromIO p $ do
+	allocCallbackComment $ \ctx cstr ->
+	catchRefIO p ctx $ do
 		clen <- cXmlStrlen cstr
 		parserToIO p (io (castPtr cstr, fromIntegral clen))
 
