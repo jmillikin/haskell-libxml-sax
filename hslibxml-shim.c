@@ -44,6 +44,12 @@ hslibxml_getcb_end_element(xmlParserCtxt *ctx)
 	return ctx->sax->endElementNs;
 }
 
+referenceSAXFunc
+hslibxml_getcb_reference(xmlParserCtxt *ctx)
+{
+	return ctx->sax->reference;
+}
+
 charactersSAXFunc
 hslibxml_getcb_characters(xmlParserCtxt *ctx)
 {
@@ -90,6 +96,12 @@ void
 hslibxml_setcb_end_element(xmlParserCtxt *ctx, endElementNsSAX2Func cb)
 {
 	ctx->sax->endElementNs = cb;
+}
+
+void
+hslibxml_setcb_reference(xmlParserCtxt *ctx, referenceSAXFunc cb)
+{
+	ctx->sax->reference = cb;
 }
 
 void

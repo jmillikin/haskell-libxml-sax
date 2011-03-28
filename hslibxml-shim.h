@@ -21,6 +21,9 @@ hslibxml_getcb_start_element(xmlParserCtxt *ctx);
 endElementNsSAX2Func
 hslibxml_getcb_end_element(xmlParserCtxt *ctx);
 
+referenceSAXFunc
+hslibxml_getcb_reference(xmlParserCtxt *ctx);
+
 charactersSAXFunc
 hslibxml_getcb_characters(xmlParserCtxt *ctx);
 
@@ -44,6 +47,9 @@ hslibxml_setcb_start_element(xmlParserCtxt *ctx, startElementNsSAX2Func cb);
 
 void
 hslibxml_setcb_end_element(xmlParserCtxt *ctx, endElementNsSAX2Func cb);
+
+void
+hslibxml_setcb_reference(xmlParserCtxt *ctx, referenceSAXFunc cb);
 
 void
 hslibxml_setcb_characters(xmlParserCtxt *ctx, charactersSAXFunc cb);

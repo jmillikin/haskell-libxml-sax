@@ -31,6 +31,7 @@ module Text.XML.LibXML.SAX
 	, parsedBeginElement
 	, parsedEndElement
 	, parsedCharacters
+	, parsedReference
 	, parsedComment
 	, parsedInstruction
 	, parsedDoctype
@@ -105,6 +106,7 @@ freeCallbacks ctx = do
 	cGetCB_EndElement ctx >>= freeFunPtr
 	cGetCB_StartElement ctx >>= freeFunPtr
 	cGetCB_EndElement ctx >>= freeFunPtr
+	cGetCB_Reference ctx >>= freeFunPtr
 	cGetCB_Characters ctx >>= freeFunPtr
 	cGetCB_Instruction ctx >>= freeFunPtr
 	cGetCB_Comment ctx >>= freeFunPtr
@@ -152,6 +154,8 @@ type EndElementNsSAX2Func = (Ptr Context -> CUString -> CUString -> CUString -> 
 
 type CharactersSAXFunc = (Ptr Context -> CUString -> CInt -> IO ())
 
+type ReferenceSAXFunc = Ptr Context -> CUString -> IO ()
+
 type CommentSAXFunc = Ptr Context -> CUString -> IO ()
 
 type ProcessingInstructionSAXFunc = Ptr Context -> CUString -> CUString -> IO ()
@@ -169,6 +173,9 @@ foreign import ccall "wrapper"
 
 foreign import ccall "wrapper"
 	allocCallbackCharacters :: CharactersSAXFunc -> IO (FunPtr CharactersSAXFunc)
+
+foreign import ccall "wrapper"
+	allocCallbackReference :: ReferenceSAXFunc -> IO (FunPtr ReferenceSAXFunc)
 
 foreign import ccall "wrapper"
 	allocCallbackComment :: CommentSAXFunc -> IO (FunPtr CommentSAXFunc)
@@ -261,6 +268,19 @@ parsedCharacters :: Callback m (T.Text -> m Bool)
 parsedCharacters = callback wrapCharacters
 	cGetCB_Characters
 	cSetCB_Characters
+
+wrapReference :: Parser m -> (T.Text -> m Bool)
+               -> IO (FunPtr ReferenceSAXFunc)
+wrapReference p io =
+	allocCallbackReference $ \_ cstr ->
+	catchRef p $ parserFromIO p $ do
+		text <- peekUTF8 (castPtr cstr)
+		parserToIO p (io text)
+
+parsedReference :: Callback m (T.Text -> m Bool)
+parsedReference = callback wrapReference
+	cGetCB_Reference
+	cSetCB_Reference
 
 wrapComment :: Parser m -> (T.Text -> m Bool)
             -> IO (FunPtr CommentSAXFunc)
@@ -420,6 +440,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_start_element"
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_end_element"
 	cGetCB_EndElement :: Ptr Context -> IO (FunPtr EndElementNsSAX2Func)
 
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_reference"
+	cGetCB_Reference :: Ptr Context -> IO (FunPtr ReferenceSAXFunc)
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_characters"
 	cGetCB_Characters :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
 
@@ -443,6 +466,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_start_element"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_end_element"
 	cSetCB_EndElement :: Ptr Context -> FunPtr EndElementNsSAX2Func -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_reference"
+	cSetCB_Reference :: Ptr Context -> FunPtr ReferenceSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_characters"
 	cSetCB_Characters :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
