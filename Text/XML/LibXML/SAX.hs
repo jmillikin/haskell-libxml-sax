@@ -38,11 +38,8 @@ module Text.XML.LibXML.SAX
 	, parsedDoctype
 	
 	-- ** Parser input
-	, parseText
-	, parseLazyText
 	, parseBytes
 	, parseLazyBytes
-	, parseBuffer
 	, parseComplete
 	) where
 import qualified Control.Exception as E
@@ -344,12 +341,6 @@ parseImpl p io = parserFromIO p $ do
 		err <- getParseError p
 		parserToIO p (parserOnError p err)
 
-parseText :: Parser m -> T.Text -> m ()
-parseText p = parseBytes p . TE.encodeUtf8
-
-parseLazyText :: Parser m -> TL.Text -> m ()
-parseLazyText p = parseText p . T.concat . TL.toChunks
-
 parseBytes :: Parser m -> B.ByteString -> m ()
 parseBytes p bytes = parseImpl p $ \h ->
 	BU.unsafeUseAsCStringLen bytes $ \(cstr, len) ->
@@ -357,10 +348,6 @@ parseBytes p bytes = parseImpl p $ \h ->
 
 parseLazyBytes :: Parser m -> BL.ByteString -> m ()
 parseLazyBytes p = parseBytes p . B.concat . BL.toChunks
-
-parseBuffer :: Parser m -> (Ptr Word8, Integer) -> m ()
-parseBuffer p (ptr, len) = parseImpl p $ \h ->
-	cParseChunk h (castPtr ptr) (fromIntegral len) 0
 
 -- | Finish parsing any buffered data, and check that the document was
 -- closed correctly.
