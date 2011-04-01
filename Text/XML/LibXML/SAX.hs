@@ -37,10 +37,6 @@ module Text.XML.LibXML.SAX
 	, parsedCDATA
 	, parsedDoctype
 	
-	-- *** Buffer-based callbacks
-	, parsedCharactersBuffer
-	, parsedCommentBuffer
-	
 	-- ** Parser input
 	, parseText
 	, parseLazyText
@@ -330,30 +326,6 @@ parsedDoctype :: Callback m (X.Doctype -> m Bool)
 parsedDoctype = callback wrapExternalSubset
 	getcb_externalSubset
 	setcb_externalSubset
-
-wrapCharactersBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
-                     -> IO (FunPtr CharactersSAXFunc)
-wrapCharactersBuffer p io =
-	allocCallbackCharacters $ \ctx cstr clen ->
-	catchRef p ctx (io (castPtr cstr, fromIntegral clen))
-
-parsedCharactersBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
-parsedCharactersBuffer = callback wrapCharactersBuffer
-	getcb_characters
-	setcb_characters
-
-wrapCommentBuffer :: Parser m -> ((Ptr Word8, Integer) -> m Bool)
-            -> IO (FunPtr CommentSAXFunc)
-wrapCommentBuffer p io =
-	allocCallbackComment $ \ctx cstr ->
-	catchRefIO p ctx $ do
-		clen <- cXmlStrlen cstr
-		parserToIO p (io (castPtr cstr, fromIntegral clen))
-
-parsedCommentBuffer :: Callback m ((Ptr Word8, Integer) -> m Bool)
-parsedCommentBuffer = callback wrapCommentBuffer
-	getcb_comment
-	setcb_comment
 
 withParserIO :: Parser m -> (Ptr Context -> IO a) -> IO a
 withParserIO p io = withForeignPtr (parserHandle p) io
