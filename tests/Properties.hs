@@ -91,6 +91,13 @@ chunks =
 	   , X.EventContent (X.ContentEntity "ent")
 	   , X.EventEndElement "with-entity"
 	   ])
+	, ("<with-attr-entity a='ent &ent; attr'/>",
+	   [ X.EventBeginElement "with-attr-entity"
+	     $ Map.fromList [("a", [ X.ContentText "ent "
+	                           , X.ContentEntity "ent"
+	                           , X.ContentText " attr"])]
+	   , X.EventEndElement "with-attr-entity"
+	   ])
 	, ("</doc>",
 	   [ X.EventEndElement "doc"
 	   ])

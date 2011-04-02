@@ -60,6 +60,8 @@ import           Data.IORef (IORef, newIORef, readIORef, writeIORef)
 import           Foreign hiding (free)
 import           Foreign.C
 import qualified Foreign.Concurrent as FC
+import           Text.ParserCombinators.ReadP ((+++))
+import qualified Text.ParserCombinators.ReadP as ReadP
 
 data Context = Context
 
@@ -274,10 +276,27 @@ peekAttributes ptr = fmap Map.fromList . loop 0 where
 		val_end <- peekElemOff ptr (offset + 4)
 		val <- peekUTF8Len (val_begin, minusPtr val_end val_begin)
 		
-		let attr = (X.Name local ns prefix, [X.ContentText val])
+		let content = parseAttributeContent val
+		let attr = (X.Name local ns prefix, content)
 		attrs <- loop (offset + 5) (n - 1)
 		
 		return (attr:attrs)
+
+parseAttributeContent :: T.Text -> [X.Content]
+parseAttributeContent = parse . T.unpack where
+	parse chars = case ReadP.readP_to_S parser chars of
+		(cs,_):_ -> cs
+		_ -> error "parseAttributeContent: no parse"
+	parser = ReadP.manyTill content ReadP.eof
+	content = reference +++ text
+	reference = do
+		ReadP.char '&'
+		name <- ReadP.munch1 (/= ';')
+		ReadP.char ';'
+		return (X.ContentEntity (T.pack name))
+	text = do
+		chars <- ReadP.munch1 (/= '&')
+		return (X.ContentText (T.pack chars))
 
 -- }}}
 
