@@ -53,14 +53,14 @@ chunks =
 	, ("<!-- comment here -->",
 	   [ X.EventComment " comment here "
 	   ])
-	, ("<!DOCTYPE SOME_DOCTYPE [",
+	, ("<!DOCTYPE SOME_DOCTYPE PUBLIC \"foo\" \"bar\" [",
 	   [
 	   ])
 	, ("<!ENTITY ent \"some entity\">",
 	   [
 	   ])
 	, ("]>",
-	   [
+	   [ X.EventBeginDoctype "SOME_DOCTYPE" (Just (X.PublicID "foo" "bar"))
 	   ])
 	, ("<doc>",
 	   [ X.EventBeginElement "doc" Map.empty
@@ -117,3 +117,4 @@ setCallbacks p ref = do
 	set SAX.parsedCDATA (\txt -> add (X.EventCDATA txt))
 	set SAX.parsedComment (\txt -> add (X.EventComment txt))
 	set SAX.parsedInstruction (\pi -> add (X.EventInstruction pi))
+	set SAX.parsedExternalSubset (\name id -> add (X.EventBeginDoctype name id))

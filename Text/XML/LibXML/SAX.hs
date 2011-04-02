@@ -40,7 +40,7 @@ module Text.XML.LibXML.SAX
 	, parsedComment
 	, parsedInstruction
 	, parsedCDATA
-	, parsedDoctype
+	, parsedExternalSubset
 	
 	) where
 
@@ -457,14 +457,14 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdataBlock"
 
 -- external subset {{{
 
-parsedDoctype :: Callback m (X.Doctype -> m Bool)
-parsedDoctype = callback wrap_externalSubset
+parsedExternalSubset :: Callback m (T.Text -> Maybe X.ExternalID -> m Bool)
+parsedExternalSubset = callback wrap_externalSubset
 	getcb_externalSubset
 	setcb_externalSubset
 
 type ExternalSubsetSAXFunc = Ptr Context -> CString -> CString -> CString -> IO ()
 
-wrap_externalSubset :: Parser m -> (X.Doctype -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
+wrap_externalSubset :: Parser m -> (T.Text -> Maybe X.ExternalID -> m Bool) -> IO (FunPtr ExternalSubsetSAXFunc)
 wrap_externalSubset p io =
 	newcb_externalSubset $ \ctx cname cpublic csystem ->
 	catchRefIO p ctx $ do
@@ -475,7 +475,7 @@ wrap_externalSubset p io =
 			(Nothing, Just s) -> Just (X.SystemID s)
 			(Just p', Just s) -> Just (X.PublicID p' s)
 			_ -> Nothing
-		parserToIO p (io (X.Doctype name external []))
+		parserToIO p (io name external)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_externalSubset"
 	getcb_externalSubset :: Ptr Context -> IO (FunPtr ExternalSubsetSAXFunc)
