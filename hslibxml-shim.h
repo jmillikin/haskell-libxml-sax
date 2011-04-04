@@ -9,6 +9,9 @@ hslibxml_alloc_parser(const char *filename);
 const char *
 hslibxml_get_last_error(xmlParserCtxt *ctx);
 
+int
+hslibxml_want_callback(xmlParserCtxt *ctx, void *cb_ctx);
+
 internalSubsetSAXFunc
 hslibxml_getcb_internalSubset(xmlParserCtxt *ctx);
 

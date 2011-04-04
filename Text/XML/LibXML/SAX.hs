@@ -165,7 +165,8 @@ clearCallback p (Callback _ clear) = parserFromIO p (clear p)
 
 catchRef :: Parser m -> Ptr Context -> m Bool -> IO ()
 catchRef p cb_ctx io = withParserIO p $ \ctx ->
-	if ctx == cb_ctx
+	(cWantCallback ctx cb_ctx >>=) $ \want ->
+	if want == 1
 		then do
 			continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
 				writeIORef (parserErrorRef p) (Just e)
@@ -590,6 +591,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_get_last_error"
 
 foreign import ccall unsafe "libxml/parser.h xmlStrlen"
 	cXmlStrlen :: Ptr CUChar -> IO CInt
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_want_callback"
+	cWantCallback :: Ptr Context -> Ptr a -> IO CInt
 
 -- callback manipulation FFI imports {{{
 

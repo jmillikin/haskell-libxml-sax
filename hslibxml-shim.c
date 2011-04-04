@@ -10,6 +10,7 @@ hslibxml_alloc_parser(const char *filename)
 	memset(&sax, 0, sizeof(xmlSAXHandler));
 	sax.initialized = XML_SAX2_MAGIC;
 	ctx = xmlCreatePushParserCtxt(&sax, NULL, NULL, 0, filename);
+	ctx->replaceEntities = 1;
 	return ctx;
 }
 
@@ -17,6 +18,17 @@ const char *
 hslibxml_get_last_error(xmlParserCtxt *ctx)
 {
 	return xmlCtxtGetLastError(ctx)->message;
+}
+
+int
+hslibxml_want_callback(xmlParserCtxt *ctx, void *cb_ctx)
+{
+	if (ctx->replaceEntities)
+	{
+		return 1;
+	}
+	
+	return (ctx == cb_ctx);
 }
 
 internalSubsetSAXFunc
@@ -263,6 +275,12 @@ void
 hslibxml_setcb_reference(xmlParserCtxt *ctx, referenceSAXFunc cb)
 {
 	ctx->sax->reference = cb;
+	
+	if (cb == NULL)
+	{ ctx->replaceEntities = 1; }
+	
+	else
+	{ ctx->replaceEntities = 0; }
 }
 
 void

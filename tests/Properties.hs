@@ -27,6 +27,7 @@ tests = [ test_Instruction
         , test_ExternalSubset
         , test_Element
         , test_Content
+        , test_ContentNoReference
         , test_PlainCDATA
         , test_PassthroughCDATA
         , test_AttributeContent
@@ -145,14 +146,33 @@ test_Content = test_Chunks "content"
 	, ("<doc>",
 	   [ X.EventBeginElement "doc" []
 	   ])
-	, (" text &ref; ",
-	   [
-	   ])
-	, ("</doc>",
+	, (" text &ref; <",
 	   [ X.EventContent (X.ContentText " text ")
 	   , X.EventContent (X.ContentEntity "ref")
 	   , X.EventContent (X.ContentText " ")
-	   , X.EventEndElement "doc"
+	   ])
+	, ("/doc>",
+	   [ X.EventEndElement "doc"
+	   ])
+	]
+
+test_ContentNoReference :: F.Test
+test_ContentNoReference = test_Chunks "content (no reference CB)"
+	(\p add -> do
+		let set cb st = SAX.setCallback p cb st
+		set SAX.parsedCharacters (\txt -> add (X.EventContent (X.ContentText txt)))
+	)
+	[ ("<!DOCTYPE SOME_DOCTYPE [<!ENTITY ref \"some reference\">]>",
+	  [
+	  ])
+	, ("<doc>", [])
+	, (" text &ref; <",
+	   [ X.EventContent (X.ContentText " text ")
+	   , X.EventContent (X.ContentText "some reference")
+	   , X.EventContent (X.ContentText " ")
+	   ])
+	, ("/doc>",
+	   [
 	   ])
 	]
 
