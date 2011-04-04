@@ -6,6 +6,9 @@
 xmlParserCtxtPtr
 hslibxml_alloc_parser(const char *filename);
 
+void
+hslibxml_free_parser(xmlParserCtxt *ctx);
+
 const char *
 hslibxml_get_last_error(xmlParserCtxt *ctx);
 

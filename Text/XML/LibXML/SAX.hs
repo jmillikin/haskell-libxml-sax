@@ -577,7 +577,7 @@ type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
 	cAllocParser :: CString -> IO (Ptr Context)
 
-foreign import ccall unsafe "libxml/parser.h xmlFreeParserCtxt"
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_free_parser"
 	cFreeParser :: Ptr Context -> IO ()
 
 foreign import ccall safe "libxml/parser.h xmlParseChunk"
