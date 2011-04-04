@@ -240,10 +240,11 @@ test_AttributeOrder = test_Chunks "attribute order"
 
 test_Chunks :: String -> (SAX.Parser (ST.ST ST.RealWorld) -> (X.Event -> ST.ST ST.RealWorld Bool) -> ST.ST ST.RealWorld ()) -> [(String, [X.Event])] -> F.Test
 test_Chunks name setup chunks = testCase name $ do
-	let onError err = error (T.unpack err)
-	
 	ref <- ST.stToIO (ST.newSTRef [])
-	p <- ST.stToIO (SAX.newParserST onError Nothing)
+	p <- ST.stToIO (SAX.newParserST Nothing)
+	
+	ST.stToIO (SAX.setCallback p SAX.reportError (error . T.unpack))
+	
 	let add ev = ST.modifySTRef ref (ev:) >> return True
 	ST.stToIO (setup p add)
 	

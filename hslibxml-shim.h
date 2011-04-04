@@ -3,14 +3,14 @@
 
 #include <libxml/parser.h>
 
+/* Versions of the error handling callbacks with fixed arity */
+typedef void(*FixedErrorFunc)(void *ctx, const char *msg);
+
 xmlParserCtxtPtr
 hslibxml_alloc_parser(const char *filename);
 
 void
 hslibxml_free_parser(xmlParserCtxt *ctx);
-
-const char *
-hslibxml_get_last_error(xmlParserCtxt *ctx);
 
 int
 hslibxml_want_callback(xmlParserCtxt *ctx, void *cb_ctx);
@@ -69,14 +69,11 @@ hslibxml_getcb_processingInstruction(xmlParserCtxt *ctx);
 commentSAXFunc
 hslibxml_getcb_comment(xmlParserCtxt *ctx);
 
-warningSAXFunc
+FixedErrorFunc
 hslibxml_getcb_warning(xmlParserCtxt *ctx);
 
-errorSAXFunc
+FixedErrorFunc
 hslibxml_getcb_error(xmlParserCtxt *ctx);
-
-fatalErrorSAXFunc
-hslibxml_getcb_fatalError(xmlParserCtxt *ctx);
 
 getParameterEntitySAXFunc
 hslibxml_getcb_getParameterEntity(xmlParserCtxt *ctx);
@@ -151,13 +148,10 @@ void
 hslibxml_setcb_comment(xmlParserCtxt *ctx, commentSAXFunc cb);
 
 void
-hslibxml_setcb_warning(xmlParserCtxt *ctx, warningSAXFunc cb);
+hslibxml_setcb_warning(xmlParserCtxt *ctx, FixedErrorFunc cb);
 
 void
-hslibxml_setcb_error(xmlParserCtxt *ctx, errorSAXFunc cb);
-
-void
-hslibxml_setcb_fatalError(xmlParserCtxt *ctx, fatalErrorSAXFunc cb);
+hslibxml_setcb_error(xmlParserCtxt *ctx, FixedErrorFunc cb);
 
 void
 hslibxml_setcb_getParameterEntity(xmlParserCtxt *ctx, getParameterEntitySAXFunc cb);

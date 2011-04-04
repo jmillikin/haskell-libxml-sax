@@ -1,14 +1,28 @@
+#define _GNU_SOURCE
+
 #include "hslibxml-shim.h"
 #include <string.h>
+#include <stdio.h>
+
+typedef struct UserData UserData;
+struct UserData
+{
+	FixedErrorFunc warning;
+	FixedErrorFunc error;
+};
 
 xmlParserCtxtPtr
 hslibxml_alloc_parser(const char *filename)
 {
 	xmlSAXHandler sax;
 	xmlParserCtxt *ctx;
+	UserData *user_data;
+	
+	user_data = calloc(1, sizeof(UserData));
 	
 	memset(&sax, 0, sizeof(xmlSAXHandler));
 	sax.initialized = XML_SAX2_MAGIC;
+	sax._private = user_data;
 	ctx = xmlCreatePushParserCtxt(&sax, NULL, NULL, 0, filename);
 	ctx->replaceEntities = 1;
 	return ctx;
@@ -18,12 +32,6 @@ void
 hslibxml_free_parser(xmlParserCtxt *ctx)
 {
 	xmlFreeParserCtxt(ctx);
-}
-
-const char *
-hslibxml_get_last_error(xmlParserCtxt *ctx)
-{
-	return xmlCtxtGetLastError(ctx)->message;
 }
 
 int
@@ -145,16 +153,18 @@ hslibxml_getcb_comment(xmlParserCtxt *ctx)
 	return ctx->sax->comment;
 }
 
-warningSAXFunc
+FixedErrorFunc
 hslibxml_getcb_warning(xmlParserCtxt *ctx)
 {
-	return ctx->sax->warning;
+	UserData *user_data = (UserData *)ctx->sax->_private;
+	return user_data->warning;
 }
 
-errorSAXFunc
+FixedErrorFunc
 hslibxml_getcb_error(xmlParserCtxt *ctx)
 {
-	return ctx->sax->error;
+	UserData *user_data = (UserData *)ctx->sax->_private;
+	return user_data->error;
 }
 
 fatalErrorSAXFunc
@@ -313,16 +323,80 @@ hslibxml_setcb_comment(xmlParserCtxt *ctx, commentSAXFunc cb)
 	ctx->sax->comment = cb;
 }
 
-void
-hslibxml_setcb_warning(xmlParserCtxt *ctx, warningSAXFunc cb)
+static void
+hslibxml_on_warning(void *data, const char *format, ...)
 {
-	ctx->sax->warning = cb;
+	xmlParserCtxt *ctx;
+	UserData *user_data;
+	char *msg;
+	va_list params;
+	int rc;
+	
+	ctx = (xmlParserCtxt *)data;
+	user_data = (UserData *)ctx->sax->_private;
+	
+	va_start(params, format);
+	rc = vasprintf(&msg, format, params);
+	if (rc == -1)
+	{
+		/* try to get something to the user */
+		user_data->warning(ctx, format);
+		return;
+	}
+	
+	user_data->warning(ctx, msg);
+	free(msg);
+}
+
+static void
+hslibxml_on_error(void *data, const char *format, ...)
+{
+	xmlParserCtxt *ctx;
+	UserData *user_data;
+	char *msg;
+	va_list params;
+	int rc;
+	
+	ctx = (xmlParserCtxt *)data;
+	user_data = (UserData *)ctx->sax->_private;
+	
+	va_start(params, format);
+	rc = vasprintf(&msg, format, params);
+	if (rc == -1)
+	{
+		/* try to get something to the user */
+		user_data->error(ctx, format);
+		return;
+	}
+	
+	user_data->error(ctx, msg);
+	free(msg);
 }
 
 void
-hslibxml_setcb_error(xmlParserCtxt *ctx, errorSAXFunc cb)
+hslibxml_setcb_warning(xmlParserCtxt *ctx, FixedErrorFunc cb)
 {
-	ctx->sax->error = cb;
+	UserData *user_data = (UserData *)ctx->sax->_private;
+	if (cb == NULL)
+	{ ctx->sax->warning = NULL; }
+	
+	else
+	{ ctx->sax->warning = hslibxml_on_warning; }
+	
+	user_data->warning = cb;
+}
+
+void
+hslibxml_setcb_error(xmlParserCtxt *ctx, FixedErrorFunc cb)
+{
+	UserData *user_data = (UserData *)ctx->sax->_private;
+	if (cb == NULL)
+	{ ctx->sax->error = NULL; }
+	
+	else
+	{ ctx->sax->error = hslibxml_on_error; }
+	
+	user_data->error = cb;
 }
 
 void

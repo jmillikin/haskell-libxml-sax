@@ -26,11 +26,12 @@ module Text.XML.LibXML.SAX
 	, parseLazyBytes
 	, parseComplete
 	
-	-- ** Callbacks
+	-- * Callbacks
 	, Callback
 	, setCallback
 	, clearCallback
 	
+	-- ** Parse events
 	, parsedBeginDocument
 	, parsedEndDocument
 	, parsedBeginElement
@@ -42,6 +43,10 @@ module Text.XML.LibXML.SAX
 	, parsedCDATA
 	, parsedInternalSubset
 	, parsedExternalSubset
+	
+	-- ** Warning and error reporting
+	, reportWarning
+	, reportError
 	
 	) where
 
@@ -77,15 +82,13 @@ data XmlError = XmlError
 data Parser m = Parser
 	{ parserHandle :: ForeignPtr Context
 	, parserErrorRef :: IORef (Maybe E.SomeException)
-	, parserOnError :: T.Text -> m ()
 	, parserToIO :: forall a. m a -> IO a
 	, parserFromIO :: forall a. IO a -> m a
 	}
 
-newParserIO :: (T.Text -> IO ()) -- ^ An error handler, called if parsing fails
-            -> Maybe T.Text -- ^ An optional filename or URI
+newParserIO :: Maybe T.Text -- ^ An optional filename or URI
             -> IO (Parser IO)
-newParserIO onError filename = E.block $ do
+newParserIO filename = E.block $ do
 	ref <- newIORef Nothing
 	
 	raw <- maybeWith withUTF8 filename cAllocParser
@@ -94,17 +97,15 @@ newParserIO onError filename = E.block $ do
 	FC.addForeignPtrFinalizer managed (cFreeParser raw)
 	FC.addForeignPtrFinalizer managed (freeCallbacks raw)
 	
-	return (Parser managed ref onError id id)
+	return (Parser managed ref id id)
 
-newParserST :: (T.Text -> ST.ST s ()) -- ^ An error handler, called if parsing fails
-            -> Maybe T.Text -- ^ An optional filename or URI
+newParserST :: Maybe T.Text -- ^ An optional filename or URI
             -> ST.ST s (Parser (ST.ST s))
-newParserST onError filename = ST.unsafeIOToST $ do
-	p <- newParserIO (\_ -> return ()) filename
+newParserST filename = ST.unsafeIOToST $ do
+	p <- newParserIO filename
 	return $ p
 		{ parserToIO = ST.unsafeSTToIO
 		, parserFromIO = ST.unsafeIOToST
-		, parserOnError = onError
 		}
 
 parseImpl :: Parser m -> (Ptr Context -> IO CInt) -> m ()
@@ -116,10 +117,6 @@ parseImpl p io = parserFromIO p $ do
 	case threw of
 		Nothing -> return ()
 		Just exc -> E.throwIO exc
-	
-	when (rc /= 0) $ do
-		err <- getParseError p
-		parserToIO p (parserOnError p err)
 
 parseBytes :: Parser m -> B.ByteString -> m ()
 parseBytes p bytes = parseImpl p $ \h ->
@@ -134,9 +131,6 @@ parseLazyBytes p = parseBytes p . B.concat . BL.toChunks
 -- 
 parseComplete :: Parser m -> m ()
 parseComplete p = parseImpl p (\h -> cParseChunk h nullPtr 0 1)
-
-getParseError :: Parser m -> IO T.Text
-getParseError p = withParserIO p (\h -> cGetLastError h >>= peekUTF8)
 
 -- Callbacks {{{
 
@@ -521,6 +515,44 @@ foreign import ccall "wrapper"
 
 -- }}}
 
+-- warning and error {{{
+
+reportWarning :: Callback m (T.Text -> m Bool)
+reportWarning = callback wrap_FixedError
+	getcb_warning
+	setcb_warning
+
+reportError :: Callback m (T.Text -> m Bool)
+reportError = callback wrap_FixedError
+	getcb_error
+	setcb_error
+
+type FixedErrorFunc = Ptr Context -> CString -> IO ()
+
+wrap_FixedError :: Parser m -> (T.Text -> m Bool) -> IO (FunPtr FixedErrorFunc)
+wrap_FixedError p io =
+	newcb_FixedError $ \ctx cmsg ->
+	catchRefIO p ctx $ do
+		msg <- peekUTF8 cmsg
+		parserToIO p (io msg)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_warning"
+	getcb_warning :: Ptr Context -> IO (FunPtr FixedErrorFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_error"
+	getcb_error :: Ptr Context -> IO (FunPtr FixedErrorFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_warning"
+	setcb_warning :: Ptr Context -> FunPtr FixedErrorFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_error"
+	setcb_error :: Ptr Context -> FunPtr FixedErrorFunc -> IO ()
+
+foreign import ccall "wrapper"
+	newcb_FixedError :: FixedErrorFunc -> IO (FunPtr FixedErrorFunc)
+
+-- }}}
+
 -- }}}
 
 withParserIO :: Parser m -> (Ptr Context -> IO a) -> IO a
@@ -564,12 +596,6 @@ type UnparsedEntityDeclSAXFunc = Ptr Context -> CString -> CString -> CString ->
 
 type IgnorableWhitespaceSAXFunc = Ptr Context -> CString -> CInt -> IO ()
 
-type WarningSAXFunc = Ptr Context -> IO () -- TODO
-
-type ErrorSAXFunc = Ptr Context -> IO () -- TODO
-
-type FatalErrorSAXFunc = Ptr Context -> IO () -- TODO
-
 type GetParameterEntitySAXFunc = Ptr Context -> CString -> IO (Ptr Entity)
 
 type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
@@ -585,9 +611,6 @@ foreign import ccall safe "libxml/parser.h xmlParseChunk"
 
 foreign import ccall safe "libxml/parser.h xmlStopParser"
 	cStopParser :: Ptr Context -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_get_last_error"
-	cGetLastError :: Ptr Context -> IO CString
 
 foreign import ccall unsafe "libxml/parser.h xmlStrlen"
 	cXmlStrlen :: Ptr CUChar -> IO CInt
@@ -630,15 +653,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_unparsedEntityDecl"
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_ignorableWhitespace"
 	getcb_ignorableWhitespace :: Ptr Context -> IO (FunPtr IgnorableWhitespaceSAXFunc)
 
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_warning"
-	getcb_warning :: Ptr Context -> IO (FunPtr WarningSAXFunc)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_error"
-	getcb_error :: Ptr Context -> IO (FunPtr ErrorSAXFunc)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_fatalError"
-	getcb_fatalError :: Ptr Context -> IO (FunPtr FatalErrorSAXFunc)
-
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_getParameterEntity"
 	getcb_getParameterEntity :: Ptr Context -> IO (FunPtr GetParameterEntitySAXFunc)
 
@@ -677,15 +691,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_unparsedEntityDecl"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_ignorableWhitespace"
 	setcb_ignorableWhitespace :: Ptr Context -> FunPtr IgnorableWhitespaceSAXFunc -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_warning"
-	setcb_warning :: Ptr Context -> FunPtr WarningSAXFunc -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_error"
-	setcb_error :: Ptr Context -> FunPtr ErrorSAXFunc -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_fatalError"
-	setcb_fatalError :: Ptr Context -> FunPtr FatalErrorSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_getParameterEntity"
 	setcb_getParameterEntity :: Ptr Context -> FunPtr GetParameterEntitySAXFunc -> IO ()
