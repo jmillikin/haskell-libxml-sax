@@ -9,7 +9,6 @@ import           Control.Monad (forM_)
 import qualified Control.Monad.ST as ST
 
 import qualified Data.ByteString.Char8 as B8
-import qualified Data.Map as Map
 import qualified Data.STRef as ST
 import qualified Data.Text as T
 
@@ -63,39 +62,39 @@ chunks =
 	   [ X.EventBeginDoctype "SOME_DOCTYPE" (Just (X.PublicID "foo" "bar"))
 	   ])
 	, ("<doc>",
-	   [ X.EventBeginElement "doc" Map.empty
+	   [ X.EventBeginElement "doc" []
 	   ])
 	, ("<with-attr a='b'>",
 	   [ X.EventBeginElement "with-attr"
-	     $ Map.fromList [("a", [X.ContentText "b"])]
+	     [("a", [X.ContentText "b"])]
 	   ])
 	, ("</with-attr>",
 	   [ X.EventEndElement "with-attr"
 	   ])
 	, ("<no-close/>",
-	   [ X.EventBeginElement "no-close" Map.empty
+	   [ X.EventBeginElement "no-close" []
 	   , X.EventEndElement "no-close"
 	   ])
 	, ("<with-text> text </with-text>",
-	   [ X.EventBeginElement "with-text" Map.empty
+	   [ X.EventBeginElement "with-text" []
 	   , X.EventContent (X.ContentText " text ")
 	   , X.EventEndElement "with-text"
 	   ])
 	, ("<with-cdata><![CDATA[<text>&here]]></with-cdata>",
-	   [ X.EventBeginElement "with-cdata" Map.empty
+	   [ X.EventBeginElement "with-cdata" []
 	   , X.EventCDATA "<text>&here"
 	   , X.EventEndElement "with-cdata"
 	   ])
 	, ("<with-entity>&ent;</with-entity>",
-	   [ X.EventBeginElement "with-entity" Map.empty
+	   [ X.EventBeginElement "with-entity" []
 	   , X.EventContent (X.ContentEntity "ent")
 	   , X.EventEndElement "with-entity"
 	   ])
 	, ("<with-attr-entity a='ent &ent; attr'/>",
 	   [ X.EventBeginElement "with-attr-entity"
-	     $ Map.fromList [("a", [ X.ContentText "ent "
-	                           , X.ContentEntity "ent"
-	                           , X.ContentText " attr"])]
+	     [("a", [ X.ContentText "ent "
+	            , X.ContentEntity "ent"
+	            , X.ContentText " attr"])]
 	   , X.EventEndElement "with-attr-entity"
 	   ])
 	, ("</doc>",

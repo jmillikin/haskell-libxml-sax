@@ -50,8 +50,6 @@ import qualified Control.Monad.ST as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
 import qualified Data.ByteString.Lazy as BL
-import           Data.Map (Map)
-import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as TL
@@ -238,14 +236,14 @@ foreign import ccall "wrapper"
 
 -- begin element {{{
 
-parsedBeginElement :: Callback m (X.Name -> Map X.Name [X.Content] -> m Bool)
+parsedBeginElement :: Callback m (X.Name -> [(X.Name, [X.Content])] -> m Bool)
 parsedBeginElement = callback wrap_beginElement
 	getcb_startElementNs
 	setcb_startElementNs
 
 type StartElementNsSAX2Func = (Ptr Context -> CString -> CString -> CString -> CInt -> Ptr CString -> CInt -> CInt -> Ptr CString -> IO ())
 
-wrap_beginElement :: Parser m -> (X.Name -> Map X.Name [X.Content] -> m Bool) -> IO (FunPtr StartElementNsSAX2Func)
+wrap_beginElement :: Parser m -> (X.Name -> [(X.Name, [X.Content])] -> m Bool) -> IO (FunPtr StartElementNsSAX2Func)
 wrap_beginElement p io =
 	newcb_startElementNs $ \ctx cln cpfx cns _ _ n_attrs _ raw_attrs ->
 	catchRefIO p ctx $ do
@@ -264,8 +262,8 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_startElementNs"
 foreign import ccall "wrapper"
 	newcb_startElementNs :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
 
-peekAttributes :: Ptr CString -> CInt -> IO (Map X.Name [X.Content])
-peekAttributes ptr = fmap Map.fromList . loop 0 where
+peekAttributes :: Ptr CString -> CInt -> IO [(X.Name, [X.Content])]
+peekAttributes ptr = loop 0 where
 	loop _      0 = return []
 	loop offset n = do
 		local <- peekUTF8 =<< peekElemOff ptr (offset + 0)
