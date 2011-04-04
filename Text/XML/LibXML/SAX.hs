@@ -40,6 +40,7 @@ module Text.XML.LibXML.SAX
 	, parsedComment
 	, parsedInstruction
 	, parsedCDATA
+	, parsedInternalSubset
 	, parsedExternalSubset
 	
 	) where
@@ -486,6 +487,39 @@ foreign import ccall "wrapper"
 
 -- }}}
 
+-- internal subset {{{
+
+parsedInternalSubset :: Callback m (T.Text -> Maybe X.ExternalID -> m Bool)
+parsedInternalSubset = callback wrap_internalSubset
+	getcb_internalSubset
+	setcb_internalSubset
+
+type InternalSubsetSAXFunc = Ptr Context -> CString -> CString -> CString -> IO ()
+
+wrap_internalSubset :: Parser m -> (T.Text -> Maybe X.ExternalID -> m Bool) -> IO (FunPtr InternalSubsetSAXFunc)
+wrap_internalSubset p io =
+	newcb_internalSubset $ \ctx cname cpublic csystem ->
+	catchRefIO p ctx $ do
+		name <- peekUTF8 (castPtr cname)
+		public <- maybePeek peekUTF8 (castPtr cpublic)
+		system <- maybePeek peekUTF8 (castPtr csystem)
+		let external = case (public, system) of
+			(Nothing, Just s) -> Just (X.SystemID s)
+			(Just p', Just s) -> Just (X.PublicID p' s)
+			_ -> Nothing
+		parserToIO p (io name external)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_internalSubset"
+	getcb_internalSubset :: Ptr Context -> IO (FunPtr InternalSubsetSAXFunc)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_internalSubset"
+	setcb_internalSubset :: Ptr Context -> FunPtr InternalSubsetSAXFunc -> IO ()
+
+foreign import ccall "wrapper"
+	newcb_internalSubset :: InternalSubsetSAXFunc -> IO (FunPtr InternalSubsetSAXFunc)
+
+-- }}}
+
 -- }}}
 
 withParserIO :: Parser m -> (Ptr Context -> IO a) -> IO a
@@ -505,7 +539,7 @@ freeFunPtr ptr = if ptr == nullFunPtr
 	then return ()
 	else freeHaskellFunPtr ptr
 
-type InternalSubsetSAXFunc = Ptr Context -> CString -> CString -> CString -> IO ()
+-- FFI imports {{{
 
 type IsStandaloneSAXFunc = Ptr Context -> IO CInt
 
@@ -539,8 +573,6 @@ type GetParameterEntitySAXFunc = Ptr Context -> CString -> IO (Ptr Entity)
 
 type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
 
--- FFI imports {{{
-
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
 	cAllocParser :: CString -> IO (Ptr Context)
 
@@ -560,9 +592,6 @@ foreign import ccall unsafe "libxml/parser.h xmlStrlen"
 	cXmlStrlen :: Ptr CUChar -> IO CInt
 
 -- callback manipulation FFI imports {{{
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_internalSubset"
-	getcb_internalSubset :: Ptr Context -> IO (FunPtr InternalSubsetSAXFunc)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_isStandalone"
 	getcb_isStandalone :: Ptr Context -> IO (FunPtr IsStandaloneSAXFunc)
@@ -611,9 +640,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_getParameterEntity"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_serror"
 	getcb_serror :: Ptr Context -> IO (FunPtr XmlStructuredErrorFunc)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_internalSubset"
-	setcb_internalSubset :: Ptr Context -> FunPtr InternalSubsetSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_isStandalone"
 	setcb_isStandalone :: Ptr Context -> FunPtr IsStandaloneSAXFunc -> IO ()
