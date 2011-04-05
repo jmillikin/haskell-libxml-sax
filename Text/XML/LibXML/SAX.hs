@@ -307,12 +307,17 @@ foreign import ccall "wrapper"
 
 -- }}}
 
--- characters {{{
+-- characters and cdata {{{
 
 parsedCharacters :: Callback m (T.Text -> m Bool)
 parsedCharacters = callback wrap_characters
 	getcb_characters
 	setcb_characters
+
+parsedCDATA :: Callback m (T.Text -> m Bool)
+parsedCDATA = callback wrap_characters
+	getcb_cdataBlock
+	setcb_cdataBlock
 
 type CharactersSAXFunc = (Ptr Context -> CString -> CInt -> IO ())
 
@@ -326,8 +331,14 @@ wrap_characters p io =
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_characters"
 	getcb_characters :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
 
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdataBlock"
+	getcb_cdataBlock :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_characters"
 	setcb_characters :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdataBlock"
+	setcb_cdataBlock :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
 
 foreign import ccall "wrapper"
 	newcb_characters :: CharactersSAXFunc -> IO (FunPtr CharactersSAXFunc)
@@ -413,23 +424,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_processingInstructio
 
 foreign import ccall "wrapper"
 	newcb_processingInstruction :: ProcessingInstructionSAXFunc -> IO (FunPtr ProcessingInstructionSAXFunc)
-
--- }}}
-
--- cdata {{{
-
-type CdataBlockSAXFunc = Ptr Context -> CString -> CInt -> IO ()
-
-parsedCDATA :: Callback m (T.Text -> m Bool)
-parsedCDATA = callback wrap_characters
-	getcb_cdataBlock
-	setcb_cdataBlock
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdataBlock"
-	getcb_cdataBlock :: Ptr Context -> IO (FunPtr CdataBlockSAXFunc)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdataBlock"
-	setcb_cdataBlock :: Ptr Context -> FunPtr CdataBlockSAXFunc -> IO ()
 
 -- }}}
 
