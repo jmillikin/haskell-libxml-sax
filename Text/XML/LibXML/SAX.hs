@@ -68,16 +68,6 @@ import qualified Text.ParserCombinators.ReadP as ReadP
 
 data Context = Context
 
-data Entity = Entity
-
-data ParserInput = ParserInput
-
-data Enumeration = Enumeration
-
-data ElementContent = ElementContent
-
-data XmlError = XmlError
-
 data Parser m = Parser
 	{ parserHandle :: ForeignPtr Context
 	, parserErrorRef :: IORef (Maybe E.SomeException)
@@ -568,7 +558,37 @@ freeFunPtr ptr = if ptr == nullFunPtr
 	then return ()
 	else freeHaskellFunPtr ptr
 
--- FFI imports {{{
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
+	cAllocParser :: CString -> IO (Ptr Context)
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_free_parser"
+	cFreeParser :: Ptr Context -> IO ()
+
+foreign import ccall safe "libxml/parser.h xmlParseChunk"
+	cParseChunk :: Ptr Context -> CString -> CInt -> CInt -> IO CInt
+
+foreign import ccall safe "libxml/parser.h xmlStopParser"
+	cStopParser :: Ptr Context -> IO ()
+
+foreign import ccall unsafe "libxml/parser.h xmlStrlen"
+	cXmlStrlen :: Ptr CUChar -> IO CInt
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_want_callback"
+	cWantCallback :: Ptr Context -> Ptr a -> IO CInt
+
+-- Unbound callback FFI definitions {{{
+
+{-
+
+data Entity = Entity
+
+data ParserInput = ParserInput
+
+data Enumeration = Enumeration
+
+data ElementContent = ElementContent
+
+data XmlError = XmlError
 
 type IsStandaloneSAXFunc = Ptr Context -> IO CInt
 
@@ -595,26 +615,6 @@ type IgnorableWhitespaceSAXFunc = Ptr Context -> CString -> CInt -> IO ()
 type GetParameterEntitySAXFunc = Ptr Context -> CString -> IO (Ptr Entity)
 
 type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
-	cAllocParser :: CString -> IO (Ptr Context)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_free_parser"
-	cFreeParser :: Ptr Context -> IO ()
-
-foreign import ccall safe "libxml/parser.h xmlParseChunk"
-	cParseChunk :: Ptr Context -> CString -> CInt -> CInt -> IO CInt
-
-foreign import ccall safe "libxml/parser.h xmlStopParser"
-	cStopParser :: Ptr Context -> IO ()
-
-foreign import ccall unsafe "libxml/parser.h xmlStrlen"
-	cXmlStrlen :: Ptr CUChar -> IO CInt
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_want_callback"
-	cWantCallback :: Ptr Context -> Ptr a -> IO CInt
-
--- callback manipulation FFI imports {{{
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_isStandalone"
 	getcb_isStandalone :: Ptr Context -> IO (FunPtr IsStandaloneSAXFunc)
@@ -694,6 +694,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_getParameterEntity"
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_serror"
 	setcb_serror :: Ptr Context -> FunPtr XmlStructuredErrorFunc -> IO ()
 
--- }}}
+-}
 
 -- }}}
