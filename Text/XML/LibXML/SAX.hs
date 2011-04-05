@@ -23,7 +23,6 @@ module Text.XML.LibXML.SAX
 	
 	-- ** Parser input
 	, parseBytes
-	, parseLazyBytes
 	, parseComplete
 	
 	-- * Callbacks
@@ -122,9 +121,6 @@ parseBytes :: Parser m -> B.ByteString -> m ()
 parseBytes p bytes = parseImpl p $ \h ->
 	BU.unsafeUseAsCStringLen bytes $ \(cstr, len) ->
 	cParseChunk h cstr (fromIntegral len) 0
-
-parseLazyBytes :: Parser m -> BL.ByteString -> m ()
-parseLazyBytes p = parseBytes p . B.concat . BL.toChunks
 
 -- | Finish parsing any buffered data, and check that the document was
 -- closed correctly.
