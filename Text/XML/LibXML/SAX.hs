@@ -40,6 +40,7 @@ module Text.XML.LibXML.SAX
 	, parsedComment
 	, parsedInstruction
 	, parsedCDATA
+	, parsedWhitespace
 	, parsedInternalSubset
 	, parsedExternalSubset
 	
@@ -307,7 +308,7 @@ foreign import ccall "wrapper"
 
 -- }}}
 
--- characters and cdata {{{
+-- characters, cdata, and whitespace {{{
 
 parsedCharacters :: Callback m (T.Text -> m Bool)
 parsedCharacters = callback wrap_characters
@@ -318,6 +319,11 @@ parsedCDATA :: Callback m (T.Text -> m Bool)
 parsedCDATA = callback wrap_characters
 	getcb_cdataBlock
 	setcb_cdataBlock
+
+parsedWhitespace :: Callback m (T.Text -> m Bool)
+parsedWhitespace = callback wrap_characters
+	getcb_ignorableWhitespace
+	setcb_ignorableWhitespace
 
 type CharactersSAXFunc = (Ptr Context -> CString -> CInt -> IO ())
 
@@ -334,11 +340,17 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_characters"
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_cdataBlock"
 	getcb_cdataBlock :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
 
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_ignorableWhitespace"
+	getcb_ignorableWhitespace :: Ptr Context -> IO (FunPtr CharactersSAXFunc)
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_characters"
 	setcb_characters :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_cdataBlock"
 	setcb_cdataBlock :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
+
+foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_ignorableWhitespace"
+	setcb_ignorableWhitespace :: Ptr Context -> FunPtr CharactersSAXFunc -> IO ()
 
 foreign import ccall "wrapper"
 	newcb_characters :: CharactersSAXFunc -> IO (FunPtr CharactersSAXFunc)
@@ -602,8 +614,6 @@ type ElementDeclSAXFunc = Ptr Context -> CString -> CInt -> Ptr ElementContent -
 
 type UnparsedEntityDeclSAXFunc = Ptr Context -> CString -> CString -> CString -> CString -> IO ()
 
-type IgnorableWhitespaceSAXFunc = Ptr Context -> CString -> CInt -> IO ()
-
 type GetParameterEntitySAXFunc = Ptr Context -> CString -> IO (Ptr Entity)
 
 type XmlStructuredErrorFunc = Ptr Context -> Ptr XmlError -> IO ()
@@ -637,9 +647,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_elementDecl"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_unparsedEntityDecl"
 	getcb_unparsedEntityDecl :: Ptr Context -> IO (FunPtr UnparsedEntityDeclSAXFunc)
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_ignorableWhitespace"
-	getcb_ignorableWhitespace :: Ptr Context -> IO (FunPtr IgnorableWhitespaceSAXFunc)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_getParameterEntity"
 	getcb_getParameterEntity :: Ptr Context -> IO (FunPtr GetParameterEntitySAXFunc)
@@ -676,9 +683,6 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_elementDecl"
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_unparsedEntityDecl"
 	setcb_unparsedEntityDecl :: Ptr Context -> FunPtr UnparsedEntityDeclSAXFunc -> IO ()
-
-foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_ignorableWhitespace"
-	setcb_ignorableWhitespace :: Ptr Context -> FunPtr IgnorableWhitespaceSAXFunc -> IO ()
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_getParameterEntity"
 	setcb_getParameterEntity :: Ptr Context -> FunPtr GetParameterEntitySAXFunc -> IO ()
