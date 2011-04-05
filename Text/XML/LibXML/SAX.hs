@@ -558,7 +558,7 @@ peekUTF8Len :: CStringLen -> IO T.Text
 peekUTF8Len = fmap (TE.decodeUtf8) . B.packCStringLen
 
 withUTF8 :: T.Text -> (CString -> IO a) -> IO a
-withUTF8 = B.useAsCString . TE.encodeUtf8
+withUTF8 = BU.unsafeUseAsCString . TE.encodeUtf8
 
 freeFunPtr :: FunPtr a -> IO ()
 freeFunPtr ptr = if ptr == nullFunPtr
