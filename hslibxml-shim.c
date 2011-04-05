@@ -9,22 +9,42 @@ struct UserData
 {
 	FixedErrorFunc warning;
 	FixedErrorFunc error;
+	xmlExternalEntityLoader resolveEntity;
 };
 
-xmlParserCtxtPtr
+static xmlParserInput *
+hslibxml_entity_loader(const char *publicId, const char *systemId, xmlParserCtxt *ctx)
+{
+	UserData *user_data = (UserData *)ctx->_private;
+	if (user_data && user_data->resolveEntity)
+	{
+		return user_data->resolveEntity(publicId, systemId, ctx);
+	}
+	return NULL;
+}
+
+xmlParserCtxt *
 hslibxml_alloc_parser(const char *filename)
 {
 	xmlSAXHandler sax;
 	xmlParserCtxt *ctx;
 	UserData *user_data;
 	
+	static int entity_resolver_set = 0;
+	if (entity_resolver_set == 0)
+	{
+		entity_resolver_set = 1;
+		xmlSetExternalEntityLoader(hslibxml_entity_loader);
+	}
+	
 	user_data = calloc(1, sizeof(UserData));
 	
 	memset(&sax, 0, sizeof(xmlSAXHandler));
 	sax.initialized = XML_SAX2_MAGIC;
-	sax._private = user_data;
+	
 	ctx = xmlCreatePushParserCtxt(&sax, NULL, NULL, 0, filename);
 	ctx->replaceEntities = 1;
+	ctx->_private = user_data;
 	return ctx;
 }
 
@@ -69,10 +89,11 @@ hslibxml_getcb_hasExternalSubset(xmlParserCtxt *ctx)
 	return ctx->sax->hasExternalSubset;
 }
 
-resolveEntitySAXFunc
+xmlExternalEntityLoader
 hslibxml_getcb_resolveEntity(xmlParserCtxt *ctx)
 {
-	return ctx->sax->resolveEntity;
+	UserData *user_data = (UserData *)ctx->_private;
+	return user_data->resolveEntity;
 }
 
 getEntitySAXFunc
@@ -156,14 +177,14 @@ hslibxml_getcb_comment(xmlParserCtxt *ctx)
 FixedErrorFunc
 hslibxml_getcb_warning(xmlParserCtxt *ctx)
 {
-	UserData *user_data = (UserData *)ctx->sax->_private;
+	UserData *user_data = (UserData *)ctx->_private;
 	return user_data->warning;
 }
 
 FixedErrorFunc
 hslibxml_getcb_error(xmlParserCtxt *ctx)
 {
-	UserData *user_data = (UserData *)ctx->sax->_private;
+	UserData *user_data = (UserData *)ctx->_private;
 	return user_data->error;
 }
 
@@ -234,9 +255,10 @@ hslibxml_setcb_hasExternalSubset(xmlParserCtxt *ctx, hasExternalSubsetSAXFunc cb
 }
 
 void
-hslibxml_setcb_resolveEntity(xmlParserCtxt *ctx, resolveEntitySAXFunc cb)
+hslibxml_setcb_resolveEntity(xmlParserCtxt *ctx, xmlExternalEntityLoader cb)
 {
-	ctx->sax->resolveEntity = cb;
+	UserData *user_data = (UserData *)ctx->_private;
+	user_data->resolveEntity = cb;
 }
 
 void
@@ -333,7 +355,7 @@ hslibxml_on_warning(void *data, const char *format, ...)
 	int rc;
 	
 	ctx = (xmlParserCtxt *)data;
-	user_data = (UserData *)ctx->sax->_private;
+	user_data = (UserData *)ctx->_private;
 	
 	va_start(params, format);
 	rc = vasprintf(&msg, format, params);
@@ -358,7 +380,7 @@ hslibxml_on_error(void *data, const char *format, ...)
 	int rc;
 	
 	ctx = (xmlParserCtxt *)data;
-	user_data = (UserData *)ctx->sax->_private;
+	user_data = (UserData *)ctx->_private;
 	
 	va_start(params, format);
 	rc = vasprintf(&msg, format, params);
@@ -376,7 +398,7 @@ hslibxml_on_error(void *data, const char *format, ...)
 void
 hslibxml_setcb_warning(xmlParserCtxt *ctx, FixedErrorFunc cb)
 {
-	UserData *user_data = (UserData *)ctx->sax->_private;
+	UserData *user_data = (UserData *)ctx->_private;
 	if (cb == NULL)
 	{ ctx->sax->warning = NULL; }
 	
@@ -389,7 +411,7 @@ hslibxml_setcb_warning(xmlParserCtxt *ctx, FixedErrorFunc cb)
 void
 hslibxml_setcb_error(xmlParserCtxt *ctx, FixedErrorFunc cb)
 {
-	UserData *user_data = (UserData *)ctx->sax->_private;
+	UserData *user_data = (UserData *)ctx->_private;
 	if (cb == NULL)
 	{ ctx->sax->error = NULL; }
 	

@@ -6,7 +6,7 @@
 /* Versions of the error handling callbacks with fixed arity */
 typedef void(*FixedErrorFunc)(void *ctx, const char *msg);
 
-xmlParserCtxtPtr
+xmlParserCtxt *
 hslibxml_alloc_parser(const char *filename);
 
 void
@@ -27,7 +27,7 @@ hslibxml_getcb_hasInternalSubset(xmlParserCtxt *ctx);
 hasExternalSubsetSAXFunc
 hslibxml_getcb_hasExternalSubset(xmlParserCtxt *ctx);
 
-resolveEntitySAXFunc
+xmlExternalEntityLoader
 hslibxml_getcb_resolveEntity(xmlParserCtxt *ctx);
 
 getEntitySAXFunc
@@ -106,7 +106,7 @@ void
 hslibxml_setcb_hasExternalSubset(xmlParserCtxt *ctx, hasExternalSubsetSAXFunc cb);
 
 void
-hslibxml_setcb_resolveEntity(xmlParserCtxt *ctx, resolveEntitySAXFunc cb);
+hslibxml_setcb_resolveEntity(xmlParserCtxt *ctx, xmlExternalEntityLoader cb);
 
 void
 hslibxml_setcb_getEntity(xmlParserCtxt *ctx, getEntitySAXFunc cb);

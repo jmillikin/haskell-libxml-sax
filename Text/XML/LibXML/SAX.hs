@@ -594,7 +594,7 @@ type HasInternalSubsetSAXFunc = Ptr Context -> IO CInt
 
 type HasExternalSubsetSAXFunc = Ptr Context -> IO CInt
 
-type ResolveEntitySAXFunc = Ptr Context -> CString -> CString -> IO (Ptr ParserInput)
+type ExternalEntityLoader = CString -> CString -> Ptr Context -> IO (Ptr ParserInput)
 
 type GetEntitySAXFunc = Ptr Context -> CString -> IO (Ptr Entity)
 
