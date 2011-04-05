@@ -50,17 +50,15 @@ module Text.XML.LibXML.SAX
 	) where
 
 import qualified Control.Exception as E
-import           Control.Monad (when, unless)
+import           Control.Monad (unless)
 import qualified Control.Monad.ST as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
-import qualified Data.ByteString.Lazy as BL
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy as TL
 import qualified Data.XML.Types as X
 import           Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import           Foreign hiding (free)
+import           Foreign hiding (free, void)
 import           Foreign.C
 import qualified Foreign.Concurrent as FC
 import           Text.ParserCombinators.ReadP ((+++))
@@ -97,10 +95,10 @@ newParserST filename = ST.unsafeIOToST $ do
 		, parserFromIO = ST.unsafeIOToST
 		}
 
-parseImpl :: Parser m -> (Ptr Context -> IO CInt) -> m ()
+parseImpl :: Parser m -> (Ptr Context -> IO a) -> m ()
 parseImpl p io = parserFromIO p $ do
 	writeIORef (parserErrorRef p) Nothing
-	rc <- E.block (withParserIO p io)
+	E.block (void (withParserIO p io))
 	
 	threw <- readIORef (parserErrorRef p)
 	case threw of
@@ -270,9 +268,9 @@ parseAttributeContent = parse . T.unpack where
 	parser = ReadP.manyTill content ReadP.eof
 	content = reference +++ text
 	reference = do
-		ReadP.char '&'
+		void (ReadP.char '&')
 		name <- ReadP.munch1 (/= ';')
-		ReadP.char ';'
+		void (ReadP.char ';')
 		return (X.ContentEntity (T.pack name))
 	text = do
 		chars <- ReadP.munch1 (/= '&')
@@ -558,6 +556,9 @@ freeFunPtr ptr = if ptr == nullFunPtr
 	then return ()
 	else freeHaskellFunPtr ptr
 
+void :: Functor f => f a -> f ()
+void = fmap (const ())
+
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
 	cAllocParser :: CString -> IO (Ptr Context)
 
@@ -569,9 +570,6 @@ foreign import ccall safe "libxml/parser.h xmlParseChunk"
 
 foreign import ccall safe "libxml/parser.h xmlStopParser"
 	cStopParser :: Ptr Context -> IO ()
-
-foreign import ccall unsafe "libxml/parser.h xmlStrlen"
-	cXmlStrlen :: Ptr CUChar -> IO CInt
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_want_callback"
 	cWantCallback :: Ptr Context -> Ptr a -> IO CInt
