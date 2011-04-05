@@ -6,10 +6,9 @@
 module Main (tests, main) where
 
 import           Control.Monad (forM_)
-import qualified Control.Monad.ST as ST
 
 import qualified Data.ByteString.Char8 as B8
-import qualified Data.STRef as ST
+import           Data.IORef (newIORef, readIORef, writeIORef, modifyIORef)
 import qualified Data.Text as T
 
 import qualified Text.XML.LibXML.SAX as SAX
@@ -238,22 +237,22 @@ test_AttributeOrder = test_Chunks "attribute order"
 	   ])
 	]
 
-test_Chunks :: String -> (SAX.Parser (ST.ST ST.RealWorld) -> (X.Event -> ST.ST ST.RealWorld Bool) -> ST.ST ST.RealWorld ()) -> [(String, [X.Event])] -> F.Test
+test_Chunks :: String -> (SAX.Parser IO -> (X.Event -> IO Bool) -> IO ()) -> [(String, [X.Event])] -> F.Test
 test_Chunks name setup chunks = testCase name $ do
-	ref <- ST.stToIO (ST.newSTRef [])
-	p <- ST.stToIO (SAX.newParserST Nothing)
+	ref <- newIORef []
+	p <- SAX.newParserIO Nothing
 	
-	ST.stToIO (SAX.setCallback p SAX.reportError (error . T.unpack))
+	SAX.setCallback p SAX.reportError (error . T.unpack)
 	
-	let add ev = ST.modifySTRef ref (ev:) >> return True
-	ST.stToIO (setup p add)
+	let add ev = modifyIORef ref (ev:) >> return True
+	setup p add
 	
 	forM_ chunks $ \(chunk, expected) -> do
-		ST.stToIO (SAX.parseBytes p (B8.pack chunk))
-		result <- ST.stToIO (fmap reverse (ST.readSTRef ref))
-		ST.stToIO (ST.writeSTRef ref [])
+		SAX.parseBytes p (B8.pack chunk)
+		result <- fmap reverse (readIORef ref)
+		writeIORef ref []
 		assertEqual ("chunk " ++ show chunk) expected result
 	
-	ST.stToIO (SAX.parseComplete p)
-	result <- ST.stToIO (fmap reverse (ST.readSTRef ref))
+	SAX.parseComplete p
+	result <- fmap reverse (readIORef ref)
 	assertEqual "eof" [] result
