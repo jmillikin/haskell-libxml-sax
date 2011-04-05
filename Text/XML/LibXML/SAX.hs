@@ -67,6 +67,14 @@ import qualified Text.ParserCombinators.ReadP as ReadP
 
 data Context = Context
 
+-- | A 'Parser' tracks the internal state of a LibXML parser context.
+--
+-- As LibXML is a very stateful library, parsers must operate within either
+-- the 'IO' or 'ST.ST' monad. Use 'newParserIO' or 'newParserST' to create
+-- parsers in the appropriate monad.
+--
+-- In general, clients should prefer 'newParserST', because ST values can be
+-- safely computed with no side effects.
 data Parser m = Parser
 	{ parserHandle :: ForeignPtr Context
 	, parserErrorRef :: IORef (Maybe E.SomeException)
@@ -136,14 +144,21 @@ freeCallbacks ctx = do
 	getcb_warning ctx >>= freeFunPtr
 	getcb_error ctx >>= freeFunPtr
 
--- | A callback should return 'True' to continue parsing, or 'False'
--- to cancel.
---
 data Callback m a = Callback (Parser m -> a -> IO ()) (Parser m -> IO ())
 
+-- | Set a callback computation to run when a particular parse event occurs.
+-- The callback should return 'True' to continue parsing, or 'False'
+-- to abort.
+--
+-- Alternatively, callbacks may throw an 'E.Exception' to abort parsing. The
+-- exception will be propagated through to the caller of 'parseBytes' or
+-- 'parseComplete'.
 setCallback :: Parser m -> Callback m a -> a -> m ()
 setCallback p (Callback set _) io = parserFromIO p (set p io)
 
+-- | Remove a callback from the parser. This might also change the parser's
+-- behavior, such as automatically expanding entity references when no
+-- 'parsedReference' callback is set.
 clearCallback :: Parser m -> Callback m a -> m ()
 clearCallback p (Callback _ clear) = parserFromIO p (clear p)
 
@@ -318,11 +333,16 @@ parsedCharacters = callback wrap_characters
 	getcb_characters
 	setcb_characters
 
+-- | If 'parsedCDATA' is set, it receives any text contained in CDATA
+-- blocks. By default, all text is received by 'parsedCharacters'.
 parsedCDATA :: Callback m (T.Text -> m Bool)
 parsedCDATA = callback wrap_characters
 	getcb_cdataBlock
 	setcb_cdataBlock
 
+-- | If 'parsedWhitespace' is set, it receives any whitespace marked as
+-- ignorable by the document's DTD. By default, all text is received by
+-- 'parsedCharacters'.
 parsedWhitespace :: Callback m (T.Text -> m Bool)
 parsedWhitespace = callback wrap_characters
 	getcb_ignorableWhitespace
@@ -362,6 +382,12 @@ foreign import ccall "wrapper"
 
 -- entity reference {{{
 
+-- | If 'parsedReference' is set, entity references in element and attribute
+-- content will reported separately from text, and will not be automatically
+-- expanded.
+--
+-- Use this when processing documents in passthrough mode, to preserve
+-- existing entity references.
 parsedReference :: Callback m (T.Text -> m Bool)
 parsedReference = callback wrap_reference
 	getcb_reference
