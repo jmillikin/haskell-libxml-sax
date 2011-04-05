@@ -125,11 +125,16 @@ freeCallbacks ctx = do
 	getcb_endDocument ctx >>= freeFunPtr
 	getcb_startElementNs ctx >>= freeFunPtr
 	getcb_endElementNs ctx >>= freeFunPtr
-	getcb_reference ctx >>= freeFunPtr
 	getcb_characters ctx >>= freeFunPtr
-	getcb_processingInstruction ctx >>= freeFunPtr
+	getcb_reference ctx >>= freeFunPtr
 	getcb_comment ctx >>= freeFunPtr
+	getcb_processingInstruction ctx >>= freeFunPtr
 	getcb_cdataBlock ctx >>= freeFunPtr
+	getcb_ignorableWhitespace ctx >>= freeFunPtr
+	getcb_internalSubset ctx >>= freeFunPtr
+	getcb_externalSubset ctx >>= freeFunPtr
+	getcb_warning ctx >>= freeFunPtr
+	getcb_error ctx >>= freeFunPtr
 
 -- | A callback should return 'True' to continue parsing, or 'False'
 -- to cancel.
