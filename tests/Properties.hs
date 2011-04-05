@@ -30,6 +30,7 @@ tests = [ test_Instruction
         , test_PlainCDATA
         , test_PassthroughCDATA
         , test_AttributeContent
+        , test_AttributeContentNoReference
         , test_AttributeOrder
         ]
 
@@ -208,15 +209,29 @@ test_AttributeContent = test_Chunks "attribute content"
 		let set cb st = SAX.setCallback p cb st
 		set SAX.parsedBeginElement (\n as -> add (X.EventBeginElement n as))
 		set SAX.parsedEndElement (\n -> add (X.EventEndElement n))
-		set SAX.parsedCharacters (\txt -> add (X.EventContent (X.ContentText txt)))
 		set SAX.parsedReference (\name -> add (X.EventContent (X.ContentEntity name)))
-		set SAX.parsedCDATA (\txt -> add (X.EventCDATA txt))
 	)
 	[ ("<!DOCTYPE SOME_DOCTYPE [<!ENTITY ref \"some reference\">]>",
 	  [
 	  ])
 	, ("<doc a='text &ref; text'/>",
 	   [ X.EventBeginElement "doc" [("a", [X.ContentText "text ", X.ContentEntity "ref", X.ContentText " text"])]
+	   , X.EventEndElement "doc"
+	   ])
+	]
+
+test_AttributeContentNoReference :: F.Test
+test_AttributeContentNoReference = test_Chunks "attribute content (no reference CB)"
+	(\p add -> do
+		let set cb st = SAX.setCallback p cb st
+		set SAX.parsedBeginElement (\n as -> add (X.EventBeginElement n as))
+		set SAX.parsedEndElement (\n -> add (X.EventEndElement n))
+	)
+	[ ("<!DOCTYPE SOME_DOCTYPE [<!ENTITY ref \"some reference\">]>",
+	  [
+	  ])
+	, ("<doc a='text &ref; text'/>",
+	   [ X.EventBeginElement "doc" [("a", [X.ContentText "text some reference text"])]
 	   , X.EventEndElement "doc"
 	   ])
 	]
