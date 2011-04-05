@@ -51,7 +51,7 @@ module Text.XML.LibXML.SAX
 	) where
 
 import qualified Control.Exception as E
-import           Control.Monad (unless)
+import           Control.Monad (when, unless)
 import qualified Control.Monad.ST as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
@@ -150,13 +150,11 @@ clearCallback p (Callback _ clear) = parserFromIO p (clear p)
 catchRef :: Parser m -> Ptr Context -> m Bool -> IO ()
 catchRef p cb_ctx io = withParserIO p $ \ctx ->
 	(cWantCallback ctx cb_ctx >>=) $ \want ->
-	if want == 1
-		then do
-			continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
-				writeIORef (parserErrorRef p) (Just e)
-				return False
-			unless continue (cStopParser ctx)
-		else return ()
+	when (want == 1) $ do
+		continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
+			writeIORef (parserErrorRef p) (Just e)
+			return False
+		unless continue (cStopParser ctx)
 
 catchRefIO :: Parser m -> Ptr Context -> IO Bool -> IO ()
 catchRefIO p cb_ctx io = catchRef p cb_ctx (parserFromIO p io)
