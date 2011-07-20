@@ -32,6 +32,7 @@ tests = [ test_Instruction
         , test_AttributeContent
         , test_AttributeContentNoReference
         , test_AttributeOrder
+        , test_AttributeContentAmpersand
         ]
 
 main :: IO ()
@@ -214,8 +215,9 @@ test_AttributeContent = test_Chunks "attribute content"
 	[ ("<!DOCTYPE SOME_DOCTYPE [<!ENTITY ref \"some reference\">]>",
 	  [
 	  ])
-	, ("<doc a='text &ref; text'/>",
-	   [ X.EventBeginElement "doc" [("a", [X.ContentText "text ", X.ContentEntity "ref", X.ContentText " text"])]
+	, ("<doc a='text &amp; &ref; text'/>",
+	   [ X.EventBeginElement "doc" [("a", [ X.ContentText "text ", X.ContentText "&", X.ContentText " "
+	                                      , X.ContentEntity "ref", X.ContentText " text"])]
 	   , X.EventEndElement "doc"
 	   ])
 	]
@@ -232,6 +234,19 @@ test_AttributeContentNoReference = test_Chunks "attribute content (no reference 
 	  ])
 	, ("<doc a='text &ref; text'/>",
 	   [ X.EventBeginElement "doc" [("a", [X.ContentText "text some reference text"])]
+	   , X.EventEndElement "doc"
+	   ])
+	]
+
+test_AttributeContentAmpersand :: F.Test
+test_AttributeContentAmpersand = test_Chunks "attribute content (with ampersand)"
+	(\p add -> do
+		let set cb st = SAX.setCallback p cb st
+		set SAX.parsedBeginElement (\n as -> add (X.EventBeginElement n as))
+		set SAX.parsedEndElement (\n -> add (X.EventEndElement n))
+	)
+	[ ("<doc a='&amp;foo'/>",
+	   [ X.EventBeginElement "doc" [("a", [X.ContentText "&foo"])]
 	   , X.EventEndElement "doc"
 	   ])
 	]

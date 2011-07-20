@@ -55,6 +55,7 @@ import           Control.Monad (when, unless)
 import qualified Control.Monad.ST as ST
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
+import           Data.Char (chr, isDigit)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.XML.Types as X
@@ -246,10 +247,13 @@ wrap_beginElement :: Parser m -> (X.Name -> [(X.Name, [X.Content])] -> m Bool) -
 wrap_beginElement p io =
 	newcb_startElementNs $ \ctx cln cpfx cns _ _ n_attrs _ raw_attrs ->
 	catchRefIO p ctx $ do
+		refCB <- getcb_reference ctx
+		let hasRefCB = refCB /= nullFunPtr
+		
 		ns <- maybePeek peekUTF8 (castPtr cns)
 		pfx <- maybePeek peekUTF8 (castPtr cpfx)
 		ln <- peekUTF8 (castPtr cln)
-		attrs <- peekAttributes (castPtr raw_attrs) n_attrs
+		attrs <- peekAttributes hasRefCB (castPtr raw_attrs) n_attrs
 		parserToIO p (io (X.Name ln ns pfx) attrs)
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_getcb_startElementNs"
@@ -261,8 +265,8 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_setcb_startElementNs"
 foreign import ccall "wrapper"
 	newcb_startElementNs :: StartElementNsSAX2Func -> IO (FunPtr StartElementNsSAX2Func)
 
-peekAttributes :: Ptr CString -> CInt -> IO [(X.Name, [X.Content])]
-peekAttributes ptr = loop 0 where
+peekAttributes :: Bool -> Ptr CString -> CInt -> IO [(X.Name, [X.Content])]
+peekAttributes hasRefCB ptr = loop 0 where
 	loop _      0 = return []
 	loop offset n = do
 		local <- peekUTF8 =<< peekElemOff ptr (offset + 0)
@@ -273,7 +277,9 @@ peekAttributes ptr = loop 0 where
 		val_end <- peekElemOff ptr (offset + 4)
 		val <- peekUTF8Len (val_begin, minusPtr val_end val_begin)
 		
-		let content = parseAttributeContent val
+		let content = if hasRefCB
+			then parseAttributeContent val
+			else [X.ContentText val]
 		let attr = (X.Name local ns prefix, content)
 		attrs <- loop (offset + 5) (n - 1)
 		
@@ -285,7 +291,12 @@ parseAttributeContent = parse . T.unpack where
 		(cs,_):_ -> cs
 		_ -> error "parseAttributeContent: no parse"
 	parser = ReadP.manyTill content ReadP.eof
-	content = reference +++ text
+	content = charRef +++ reference +++ text
+	charRef = do
+		void (ReadP.string "&#")
+		val <- ReadP.munch1 (isDigit)
+		void (ReadP.char ';')
+		return (X.ContentText (T.singleton (chr (read val))))
 	reference = do
 		void (ReadP.char '&')
 		name <- ReadP.munch1 (/= ';')

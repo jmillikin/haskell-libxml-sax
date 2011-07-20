@@ -1,5 +1,5 @@
 name: libxml-sax
-version: 0.7
+version: 0.7.1
 synopsis: Bindings for the libXML2 SAX interface
 license: MIT
 license-file: license.txt
@@ -19,7 +19,7 @@ source-repository head
   location: http://john-millikin.com/software/bindings/libxml-sax/
 
 library
-  ghc-options: -Wall
+  ghc-options: -Wall -O2
   cc-options: -Wall
 
   build-depends:
