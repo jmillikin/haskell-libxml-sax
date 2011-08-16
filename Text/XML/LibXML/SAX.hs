@@ -1,5 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE CPP #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -290,7 +291,7 @@ parseAttributeContent = parse . T.unpack where
 	parse chars = case ReadP.readP_to_S parser chars of
 		(cs,_):_ -> cs
 		_ -> error "parseAttributeContent: no parse"
-	parser = ReadP.manyTill content ReadP.eof
+	parser = ReadP.manyTill content eof
 	content = charRef +++ reference +++ text
 	charRef = do
 		void (ReadP.string "&#")
@@ -305,6 +306,14 @@ parseAttributeContent = parse . T.unpack where
 	text = do
 		chars <- ReadP.munch1 (/= '&')
 		return (X.ContentText (T.pack chars))
+
+#if MIN_VERSION_base(4,2,0)
+	eof = ReadP.eof
+#else
+	eof = do
+		s <- ReadP.look
+		unless (null s) ReadP.pfail
+#endif
 
 -- }}}
 
