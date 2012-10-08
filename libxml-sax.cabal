@@ -14,7 +14,9 @@ bug-reports: mailto:jmillikin@gmail.com
 synopsis: Bindings for the libXML2 SAX interface
 description:
 
-extra-source-files: hslibxml-shim.h
+extra-source-files:
+  cbits/hslibxml-shim.c
+  cbits/hslibxml-shim.h
 
 source-repository head
   type: bazaar
@@ -26,6 +28,7 @@ source-repository this
   tag: haskell-libxml_0.7.3
 
 library
+  hs-source-dirs: lib
   ghc-options: -Wall -O2
   cc-options: -Wall
 
@@ -38,7 +41,7 @@ library
   exposed-modules:
     Text.XML.LibXML.SAX
 
-  c-sources: hslibxml-shim.c
+  c-sources: cbits/hslibxml-shim.c
 
   extra-libraries: xml2
   pkgconfig-depends: libxml-2.0
