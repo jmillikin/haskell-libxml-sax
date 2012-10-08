@@ -54,6 +54,13 @@ module Text.XML.LibXML.SAX
 import qualified Control.Exception as E
 import           Control.Monad (when, unless)
 import qualified Control.Monad.ST as ST
+
+#if MIN_VERSION_base(4,4,0)
+import           Control.Monad.ST.Unsafe (unsafeIOToST, unsafeSTToIO)
+#else
+import           Control.Monad.ST (unsafeIOToST, unsafeSTToIO)
+#endif
+
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Unsafe as BU
 import           Data.Char (chr, isDigit)
@@ -61,7 +68,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.XML.Types as X
 import           Data.IORef (IORef, newIORef, readIORef, writeIORef)
-import           Foreign hiding (free, void)
+import           Foreign hiding (free)
 import           Foreign.C
 import qualified Foreign.Concurrent as FC
 import           Text.ParserCombinators.ReadP ((+++))
@@ -86,7 +93,7 @@ data Parser m = Parser
 
 newParserIO :: Maybe T.Text -- ^ An optional filename or URI
             -> IO (Parser IO)
-newParserIO filename = E.block $ do
+newParserIO filename = mask $ \_ -> do
 	ref <- newIORef Nothing
 	
 	raw <- maybeWith withUTF8 filename cAllocParser
@@ -99,17 +106,17 @@ newParserIO filename = E.block $ do
 
 newParserST :: Maybe T.Text -- ^ An optional filename or URI
             -> ST.ST s (Parser (ST.ST s))
-newParserST filename = ST.unsafeIOToST $ do
+newParserST filename = unsafeIOToST $ do
 	p <- newParserIO filename
 	return $ p
-		{ parserToIO = ST.unsafeSTToIO
-		, parserFromIO = ST.unsafeIOToST
+		{ parserToIO = unsafeSTToIO
+		, parserFromIO = unsafeIOToST
 		}
 
-parseImpl :: Parser m -> (Ptr Context -> IO a) -> m ()
+parseImpl :: Parser m -> (Ptr Context -> IO CInt) -> m ()
 parseImpl p io = parserFromIO p $ do
 	writeIORef (parserErrorRef p) Nothing
-	E.block (void (withParserIO p io))
+	_ <- mask (\_ -> withParserIO p io)
 	
 	threw <- readIORef (parserErrorRef p)
 	case threw of
@@ -168,7 +175,7 @@ catchRef :: Parser m -> Ptr Context -> m Bool -> IO ()
 catchRef p cb_ctx io = withParserIO p $ \ctx ->
 	(cWantCallback ctx cb_ctx >>=) $ \want ->
 	when (want == 1) $ do
-		continue <- E.catch (E.unblock (parserToIO p io)) $ \e -> do
+		continue <- E.catch (parserToIO p io) $ \e -> do
 			writeIORef (parserErrorRef p) (Just e)
 			return False
 		unless continue (cStopParser ctx)
@@ -294,14 +301,14 @@ parseAttributeContent = parse . T.unpack where
 	parser = ReadP.manyTill content eof
 	content = charRef +++ reference +++ text
 	charRef = do
-		void (ReadP.string "&#")
+		_ <- ReadP.string "&#"
 		val <- ReadP.munch1 (isDigit)
-		void (ReadP.char ';')
+		_ <- ReadP.char ';'
 		return (X.ContentText (T.singleton (chr (read val))))
 	reference = do
-		void (ReadP.char '&')
+		_ <- ReadP.char '&'
 		name <- ReadP.munch1 (/= ';')
-		void (ReadP.char ';')
+		_ <- ReadP.char ';'
 		return (X.ContentEntity (T.pack name))
 	text = do
 		chars <- ReadP.munch1 (/= '&')
@@ -611,8 +618,13 @@ freeFunPtr ptr = if ptr == nullFunPtr
 	then return ()
 	else freeHaskellFunPtr ptr
 
-void :: Functor f => f a -> f ()
-void = fmap (const ())
+-- mask :: ((forall a. IO a -> IO a) -> IO b) -> IO b
+mask :: ((forall a. IO a -> IO a) -> IO b) -> IO b
+#if MIN_VERSION_base(4,3,0)
+mask = E.mask
+#else
+mask io = E.block (io E.unblock)
+#endif
 
 foreign import ccall unsafe "hslibxml-shim.h hslibxml_alloc_parser"
 	cAllocParser :: CString -> IO (Ptr Context)
