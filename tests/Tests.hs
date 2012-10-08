@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- Copyright (C) 2011 John Millikin <jmillikin@gmail.com>
 --
@@ -6,43 +7,42 @@
 module Main (tests, main) where
 
 import           Control.Monad (forM_)
+import           Control.Monad.IO.Class (liftIO)
 
 import qualified Data.ByteString.Char8 as B8
 import           Data.IORef (newIORef, readIORef, writeIORef, modifyIORef)
 import qualified Data.Text as T
 
+import           Test.Chell
+
 import qualified Text.XML.LibXML.SAX as SAX
 import qualified Data.XML.Types as X
 
-import           Test.HUnit
-import qualified Test.Framework as F
-import           Test.Framework.Providers.HUnit (testCase)
-
-tests :: [F.Test]
-tests = [ test_Instruction
-        , test_Comment
-        , test_InternalSubset
-        , test_InternalSubsetEmpty
-        , test_ExternalSubset
-        , test_Element
-        , test_Content
-        , test_ContentNoReference
-        , test_PlainCDATA
-        , test_PassthroughCDATA
-        , test_AttributeContent
-        , test_AttributeContentNoReference
-        , test_AttributeOrder
-        , test_AttributeContentAmpersand
-        ]
+tests :: Suite
+tests = suite "libxml-sax"
+	test_Instruction
+	test_Comment
+	test_InternalSubset
+	test_InternalSubsetEmpty
+	test_ExternalSubset
+	test_Element
+	test_Content
+	test_ContentNoReference
+	test_PlainCDATA
+	test_PassthroughCDATA
+	test_AttributeContent
+	test_AttributeContentNoReference
+	test_AttributeOrder
+	test_AttributeContentAmpersand
 
 main :: IO ()
-main = F.defaultMain tests
+main = defaultMain [tests]
 
-test_Instruction :: F.Test
+test_Instruction :: Test
 test_Instruction = test_Chunks "instruction"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
-		set SAX.parsedInstruction (\pi -> add (X.EventInstruction pi))
+		set SAX.parsedInstruction (\pi_ -> add (X.EventInstruction pi_))
 	)
 	[ ("<?something foo bar?>",
 	   [ X.EventInstruction (X.Instruction "something" "foo bar")
@@ -50,7 +50,7 @@ test_Instruction = test_Chunks "instruction"
 	, ("<doc/>", [])
 	]
 
-test_Comment :: F.Test
+test_Comment :: Test
 test_Comment = test_Chunks "comment"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -62,12 +62,12 @@ test_Comment = test_Chunks "comment"
 	, ("<doc/>", [])
 	]
 
-test_InternalSubsetEmpty :: F.Test
+test_InternalSubsetEmpty :: Test
 test_InternalSubsetEmpty = test_Chunks "internal subset (empty)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
 		set SAX.parsedComment (\txt -> add (X.EventComment txt))
-		set SAX.parsedInternalSubset (\name id -> add (X.EventBeginDoctype name id))
+		set SAX.parsedInternalSubset (\name id_ -> add (X.EventBeginDoctype name id_))
 	)
 	[ ("<!DOCTYPE SOME_DOCTYPE PUBLIC \"foo\" \"bar\" [\n",
 	   [
@@ -79,12 +79,12 @@ test_InternalSubsetEmpty = test_Chunks "internal subset (empty)"
 	, ("<doc/>", [])
 	]
 
-test_InternalSubset :: F.Test
+test_InternalSubset :: Test
 test_InternalSubset = test_Chunks "internal subset"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
 		set SAX.parsedComment (\txt -> add (X.EventComment txt))
-		set SAX.parsedInternalSubset (\name id -> add (X.EventBeginDoctype name id))
+		set SAX.parsedInternalSubset (\name id_ -> add (X.EventBeginDoctype name id_))
 	)
 	[ ("<!DOCTYPE SOME_DOCTYPE PUBLIC \"foo\" \"bar\" [\n",
 	   [
@@ -97,12 +97,12 @@ test_InternalSubset = test_Chunks "internal subset"
 	, ("<doc/>", [])
 	]
 
-test_ExternalSubset :: F.Test
+test_ExternalSubset :: Test
 test_ExternalSubset = test_Chunks "external subset"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
 		set SAX.parsedComment (\txt -> add (X.EventComment txt))
-		set SAX.parsedExternalSubset (\name id -> add (X.EventBeginDoctype name id))
+		set SAX.parsedExternalSubset (\name id_ -> add (X.EventBeginDoctype name id_))
 	)
 	[ ("<!DOCTYPE SOME_DOCTYPE PUBLIC \"foo\" \"bar\" [\n",
 	   [
@@ -117,7 +117,7 @@ test_ExternalSubset = test_Chunks "external subset"
 	, ("<doc/>", [])
 	]
 
-test_Element :: F.Test
+test_Element :: Test
 test_Element = test_Chunks "element begin/end"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -132,7 +132,7 @@ test_Element = test_Chunks "element begin/end"
 	   ])
 	]
 
-test_Content :: F.Test
+test_Content :: Test
 test_Content = test_Chunks "content"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -157,7 +157,7 @@ test_Content = test_Chunks "content"
 	   ])
 	]
 
-test_ContentNoReference :: F.Test
+test_ContentNoReference :: Test
 test_ContentNoReference = test_Chunks "content (no reference CB)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -177,7 +177,7 @@ test_ContentNoReference = test_Chunks "content (no reference CB)"
 	   ])
 	]
 
-test_PlainCDATA :: F.Test
+test_PlainCDATA :: Test
 test_PlainCDATA = test_Chunks "cdata (plain)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -190,7 +190,7 @@ test_PlainCDATA = test_Chunks "cdata (plain)"
 	, ("</doc>", [])
 	]
 
-test_PassthroughCDATA :: F.Test
+test_PassthroughCDATA :: Test
 test_PassthroughCDATA = test_Chunks "cdata (passthrough)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -204,7 +204,7 @@ test_PassthroughCDATA = test_Chunks "cdata (passthrough)"
 	, ("</doc>", [])
 	]
 
-test_AttributeContent :: F.Test
+test_AttributeContent :: Test
 test_AttributeContent = test_Chunks "attribute content"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -222,7 +222,7 @@ test_AttributeContent = test_Chunks "attribute content"
 	   ])
 	]
 
-test_AttributeContentNoReference :: F.Test
+test_AttributeContentNoReference :: Test
 test_AttributeContentNoReference = test_Chunks "attribute content (no reference CB)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -238,7 +238,7 @@ test_AttributeContentNoReference = test_Chunks "attribute content (no reference 
 	   ])
 	]
 
-test_AttributeContentAmpersand :: F.Test
+test_AttributeContentAmpersand :: Test
 test_AttributeContentAmpersand = test_Chunks "attribute content (with ampersand)"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -251,7 +251,7 @@ test_AttributeContentAmpersand = test_Chunks "attribute content (with ampersand)
 	   ])
 	]
 
-test_AttributeOrder :: F.Test
+test_AttributeOrder :: Test
 test_AttributeOrder = test_Chunks "attribute order"
 	(\p add -> do
 		let set cb st = SAX.setCallback p cb st
@@ -267,22 +267,22 @@ test_AttributeOrder = test_Chunks "attribute order"
 	   ])
 	]
 
-test_Chunks :: String -> (SAX.Parser IO -> (X.Event -> IO Bool) -> IO ()) -> [(String, [X.Event])] -> F.Test
-test_Chunks name setup chunks = testCase name $ do
-	ref <- newIORef []
-	p <- SAX.newParserIO Nothing
+test_Chunks :: String -> (SAX.Parser IO -> (X.Event -> IO Bool) -> IO ()) -> [(String, [X.Event])] -> Test
+test_Chunks name setup chunks = assertions name $ do
+	ref <- liftIO (newIORef [])
+	p <- liftIO (SAX.newParserIO Nothing)
 	
-	SAX.setCallback p SAX.reportError (error . T.unpack)
+	liftIO (SAX.setCallback p SAX.reportError (error . T.unpack))
 	
 	let add ev = modifyIORef ref (ev:) >> return True
-	setup p add
+	liftIO (setup p add)
 	
 	forM_ chunks $ \(chunk, expected) -> do
-		SAX.parseBytes p (B8.pack chunk)
-		result <- fmap reverse (readIORef ref)
-		writeIORef ref []
-		assertEqual ("chunk " ++ show chunk) expected result
+		liftIO (SAX.parseBytes p (B8.pack chunk))
+		result <- liftIO (fmap reverse (readIORef ref))
+		liftIO (writeIORef ref [])
+		$assert (equal expected result)
 	
-	SAX.parseComplete p
-	result <- fmap reverse (readIORef ref)
-	assertEqual "eof" [] result
+	liftIO (SAX.parseComplete p)
+	result <- liftIO (fmap reverse (readIORef ref))
+	$assert (equal [] result)

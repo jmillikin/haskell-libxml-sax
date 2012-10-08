@@ -3,17 +3,16 @@ version: 0
 build-type: Simple
 cabal-version: >= 1.6
 
-executable libxml-sax_tests
-  main-is: Properties.hs
+executable libxml-sax-tests
+  main-is: Tests.hs
   ghc-options: -Wall -O2
 
   build-depends:
-      base > 3 && < 5
+      base > 4.1 && < 5.0
     , bytestring
     , containers
     , libxml-sax
     , text
+    , transformers
     , xml-types
-    , HUnit == 1.2.*
-    , test-framework >= 0.2 && < 0.4
-    , test-framework-hunit == 0.2.6
+    , chell >= 0.3 && < 0.4
