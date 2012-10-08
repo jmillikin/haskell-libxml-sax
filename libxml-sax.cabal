@@ -1,22 +1,29 @@
 name: libxml-sax
 version: 0.7.3
-synopsis: Bindings for the libXML2 SAX interface
 license: MIT
 license-file: license.txt
 author: John Millikin
 maintainer: jmillikin@gmail.com
-copyright: Copyright (c) John Millikin 2010
 build-type: Simple
-cabal-version: >=1.6
+cabal-version: >= 1.6
 category: Foreign, Text, XML, Parsing
 stability: experimental
-homepage: http://john-millikin.com/software/bindings/libxml-sax/
-tested-with: GHC==6.12.1
+homepage: https://john-millikin.com/software/haskell-libxml/
+bug-reports: mailto:jmillikin@gmail.com
+
+synopsis: Bindings for the libXML2 SAX interface
+description:
+
 extra-source-files: hslibxml-shim.h
 
 source-repository head
   type: bazaar
-  location: http://john-millikin.com/software/bindings/libxml-sax/
+  location: https://john-millikin.com/branches/haskell-libxml/0.7/
+
+source-repository this
+  type: bazaar
+  location: https://john-millikin.com/branches/haskell-libxml/0.7/
+  tag: haskell-libxml_0.7.3
 
 library
   ghc-options: -Wall -O2
