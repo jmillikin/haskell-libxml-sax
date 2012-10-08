@@ -20,12 +20,12 @@ extra-source-files:
 
 source-repository head
   type: bazaar
-  location: https://john-millikin.com/branches/haskell-libxml/0.7/
+  location: https://john-millikin.com/branches/haskell-libxml-sax/0.7/
 
 source-repository this
   type: bazaar
-  location: https://john-millikin.com/branches/haskell-libxml/0.7/
-  tag: haskell-libxml_0.7.3
+  location: https://john-millikin.com/branches/haskell-libxml-sax/0.7/
+  tag: haskell-libxml-sax_0.7.3
 
 library
   hs-source-dirs: lib
