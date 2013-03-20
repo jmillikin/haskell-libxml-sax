@@ -13,6 +13,9 @@ void
 hslibxml_free_parser(xmlParserCtxt *ctx);
 
 int
+hslibxml_parse_complete(xmlParserCtxt *ctx);
+
+int
 hslibxml_want_callback(xmlParserCtxt *ctx, void *cb_ctx);
 
 internalSubsetSAXFunc

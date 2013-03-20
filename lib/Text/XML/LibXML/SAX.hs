@@ -132,7 +132,7 @@ parseBytes p bytes = parseImpl p $ \h ->
 -- closed correctly.
 -- 
 parseComplete :: Parser m -> m ()
-parseComplete p = parseImpl p (\h -> cParseChunk h nullPtr 0 1)
+parseComplete p = parseImpl p (\h -> cParseComplete h)
 
 -- Callbacks {{{
 
@@ -634,6 +634,9 @@ foreign import ccall unsafe "hslibxml-shim.h hslibxml_free_parser"
 
 foreign import ccall safe "libxml/parser.h xmlParseChunk"
 	cParseChunk :: Ptr Context -> CString -> CInt -> CInt -> IO CInt
+
+foreign import ccall safe "hslibxml-shim.h hslibxml_parse_complete"
+	cParseComplete :: Ptr Context -> IO CInt
 
 foreign import ccall safe "libxml/parser.h xmlStopParser"
 	cStopParser :: Ptr Context -> IO ()

@@ -4,6 +4,10 @@
 #include <string.h>
 #include <stdio.h>
 
+/* for hslibxml_parse_complete */
+#include <libxml/parserInternals.h>
+
+
 typedef struct UserData UserData;
 struct UserData
 {
@@ -52,6 +56,27 @@ void
 hslibxml_free_parser(xmlParserCtxt *ctx)
 {
 	xmlFreeParserCtxt(ctx);
+}
+
+int
+hslibxml_parse_complete(xmlParserCtxt *ctx) {
+	xmlParserInputPtr input;
+	int rc;
+	
+	rc = xmlParseChunk(ctx, NULL, 0, 1);
+	
+	/* Optimization: delete input stream buffers when there's nothing
+	 * more to be parsed.
+	 *
+	 * These buffers can be quite large, so if they are retained until the
+	 * Haskell garbage collector runs hslibxml_free_parser, then memory
+	 * use might become very large when parsing many documents in a loop.
+	 */
+	while ((input = inputPop(ctx)) != NULL) {
+		xmlFreeInputStream(input);
+	}
+	
+	return rc;
 }
 
 int
