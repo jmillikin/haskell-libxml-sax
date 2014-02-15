@@ -19,12 +19,12 @@ extra-source-files:
   cbits/hslibxml-shim.h
 
 source-repository head
-  type: bazaar
-  location: https://john-millikin.com/branches/haskell-libxml-sax/0.7/
+  type: git
+  location: https://john-millikin.com/code/haskell-libxml-sax/
 
 source-repository this
-  type: bazaar
-  location: https://john-millikin.com/branches/haskell-libxml-sax/0.7/
+  type: git
+  location: https://john-millikin.com/code/haskell-libxml-sax/
   tag: haskell-libxml-sax_0.7.4
 
 library
